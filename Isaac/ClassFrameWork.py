@@ -4,7 +4,10 @@ from numpy import random
 import gymtorch
 from Isaac.ObjetsEnvironnement.RoomManager import RoomManager
 from Isaac.ObjetsEnvironnement.AlbertCube import AlbertCube
+from Isaac.ObjetsEnvironnement.Room import Room
 import numpy as np
+
+
 class AlbertEnvironment(BaseTask):
 
     # Common callbacks
@@ -24,7 +27,17 @@ class AlbertEnvironment(BaseTask):
 
         #####################  ASSETS  #####################
 
-        asset_albert,asset_room = self.prepare_assets()
+        asset_albert, asset_room = self.prepare_assets()
+
+        asset_options_base_cube = gym.assetOptions()
+        asset_base_cube = gym.create_box(self.sim, width=0.5, height=0.5, depth=0.5,
+                                         asset_options=asset_options_base_cube)
+
+        asset_options_door = gym.assetOptions()
+        asset_door = gym.create_box(self.sim, width=0.5, height=0.5, depth=0.5, asset_options=asset_options_door)
+
+        asset_options_button = gym.assetOptions()
+        asset_button = gym.create_box(self.sim, width=0.5, height=0.01, depth=0.5, asset_options=asset_options_button)
 
         #####################  ENVIRONMENT SETTING  #####################
 
@@ -52,17 +65,22 @@ class AlbertEnvironment(BaseTask):
             pose_albert.p = gymapi.Vec3(2.0, 3.0, 1.5)  # pose.r pour l'orientation
             # la position est relative
             actor_handle_albert = self.gym.create_actor(env, asset_albert, pose_albert, "Albert", i,
-                                            1)  # creation  d'un acteur à partir d'un asset
+                                                        1)  # creation  d'un acteur à partir d'un asset
 
             self.actor_handles.append(actor_handle_albert)
-            self.albert_array[i] = AlbertCube(self.room_manager_array[i],i,0,num_bodies)
 
-            pose_room = gymapi.Transform()
-            pose_room.p = gymapi.Vec3(0.0, 0.0, 0.0)  # pose.r pour l'orientation
+            #pose_room = gymapi.Transform()
+            #pose_room.p = gymapi.Vec3(0.0, 0.0, 0.0)  # pose.r pour l'orientation
             # la position est relative
-            actor_handle_room = self.gym.create_actor(env, asset_room, pose_room, "Albert", i,
-                                                        1)  # creation  d'un acteur à partir d'un asset
-            self.actor_handles.append(actor_handle_room)
+            #actor_handle_room = self.gym.create_actor(env, asset_room, pose_room, "Room", i,
+             #                                         1)  # creation  d'un acteur à partir d'un asset
+            #self.actor_handles.append(actor_handle_room)
+
+            self.build_basic_room(env,asset_base_cube,asset_door)
+            pose_button=gymapi.Transform()
+            pose_button.p=gymapi.Vec3(3,4,0.52)
+            actor_handle_button=self.gym.create_actor(env,asset_button,pose_button,"button",i,1)
+            self.actor_handles.append(actor_handle_button)
 
         # prepare simulation buffers and tensor storage - required to use tensor API
         self.gym.prepare_sim(self.sim)
@@ -79,47 +97,69 @@ class AlbertEnvironment(BaseTask):
         # pos,ori,vel,ang_vel des root ( a voir comment on fait si la compo de la room n'est pas full root
         _root_tensor = self.gym.acquire_actor_root_state_tensor(self.sim)
         root_tensor = gymtorch.wrap_tensor(_root_tensor)
-        root_states_vec = root_tensor.view(num_envs, actors_per_env, 13) #
-        root_positions = root_states_vec[..., 0:3]
-        root_orientations = root_states_vec[..., 3:7]
-        root_linvels = root_states_vec[..., 7:10]
-        root_angvels = root_states_vec[..., 10:13]
 
+        for i in range(num_envs):  # on va mettre ici la création des objets
+            self.albert_array[i] = AlbertCube(self.room_manager_array[i], i, 0, num_bodies)
+            self.room_manager_array[i].add_room(Room(i,num_bodies))
 
+    def build_basic_room(self, env, asset_base_cube, asset_door):  # construction de la structure de la chambre et stockage des blocs dans une liste
+        x, y, l = 0, 0, 0
+        depth = 6
+        width = 11
+        height = 3
+        for i in range(depth):
+            for j in range(width):
+                pose = gymapi.Transform()
+                pose.p = gymapi.Vec3(x + i, y + j, l)  # pose.r pour l'orientation
+                name = "cube" + str(i * j)
+                actor_handle_cube = self.gym.create_actor(env, asset_base_cube, pose, name, i, 1)
+                self.actor_handles.append(actor_handle_cube)
 
-
-
-
-
+                for z in range(height):  # MURS
+                    if i == 0 or (j == 0 or j == 10):
+                        if i == depth / 2 and (j == width - 1 or j == 0) and (z == 0):
+                            if j == self.width - 1:
+                                pose = gymapi.Transform()
+                                pose.p = gymapi.Vec3(x + i, y + j, l + 1 + z)  # pose.r pour l'orientation
+                                name = "door"
+                                actor_handle_door = self.gym.create_actor(env, asset_door, pose, name, i, 1)
+                                self.actor_handles.append(actor_handle_door)
+                        else:
+                            pose = gymapi.Transform()
+                            pose.p = gymapi.Vec3(x + i, y + j, l + 1 + z)  # pose.r pour l'orientation
+                            name = "cube" + str(i * j + z)
+                            actor_handle_cube = self.gym.create_actor(env, asset_base_cube, pose, name, i, 1)
+                            self.actor_handles.append(actor_handle_cube)
 
     def pre_physics_step(self, actions):
         # apply actions
         # prepare DOF force tensor
-        forces = torch.zeros((num_envs,dofs_per_env),dtype=torch.float32,device=self.device)
+        forces = torch.zeros((num_envs, dofs_per_env), dtype=torch.float32, device=self.device)
 
         # scale actions and write to cart DOF slice
-        forces[:,0] = actions * self.max_push_force
+        forces[:, 0] = actions * self.max_push_force
         # apply the forces to all actors
-        self.gym.set_dof_actuation_force_tensor(self.sim,gymtorch.unwrap_tensor(forces))
+        self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(forces))
 
     def post_physics_step(self):
         # compute observations,rewards,and resets
         ...
 
-    def reset(self,env_ids):
+    def reset(self, env_ids):
         # number of environments to reset
         num_resets = len(env_ids)
 
         # generate random DOF positions and velocities
-        p=0.3 * (torch.rand((num_resets,dofs_per_env),device=self.device)-0.5)
+        p = 0.3 * (torch.rand((num_resets, dofs_per_env), device=self.device) - 0.5)
         v = 0.5 * (torch.rand((num_resets, dofs_per_env), device=self.device) - 0.5)
 
-        #write new states to DOF state tensor
-        self.dof_states[env_ids,0]=p
-        self.dof_states[env_ids,1]=v
+        # write new states to DOF state tensor
+        self.dof_states[env_ids, 0] = p
+        self.dof_states[env_ids, 1] = v
 
-        #Apply the new DOF states for the selected envs, using env_ids as the actor index tensor
-        self.gym.set_dof_state_tensor_indexed(self.sim,self.dof_states_desc,gymtorch.unwrap_tensor(env_ids),num_resets)
+        # Apply the new DOF states for the selected envs, using env_ids as the actor index tensor
+        self.gym.set_dof_state_tensor_indexed(self.sim, self.dof_states_desc, gymtorch.unwrap_tensor(env_ids),
+                                              num_resets)
 
     def compute_observations(self):
         # refresh state tensor
@@ -133,7 +173,7 @@ class AlbertEnvironment(BaseTask):
 
     def compute_rewards(self):
         # a revoir c'est casse couille : vidéo : à 47 min
-        self.rew_buf[:]=compute_reward(params)
+        self.rew_buf[:] = compute_reward(params)
 
     def prepare_assets(self):
 
@@ -141,8 +181,8 @@ class AlbertEnvironment(BaseTask):
         asset_root_albert = "../../assets"  # a changer avec le dossier MJCF
         asset_file_albert = "Albert.xml"  # a changer avec le fichier MJCF
         asset_options_albert = gymapi.AssetOptions()
-        asset_options_albert.fix_base_link = True # a voir ce que c'est
-        asset_options_albert.armature = 0.01 # a voir aussi
+        asset_options_albert.fix_base_link = True  # a voir ce que c'est
+        asset_options_albert.armature = 0.01  # a voir aussi
 
         asset_albert = self.gym.load_asset(self.sim, asset_root_albert, asset_file_albert, asset_options_albert)
 
@@ -155,7 +195,7 @@ class AlbertEnvironment(BaseTask):
 
         asset_room = self.gym.load_asset(self.sim, asset_root_room, asset_file_room, asset_options_room)
 
-        return asset_albert,asset_room
+        return asset_albert, asset_room
 
     def configure_ground(self):
         plane_params = gymapi.PlaneParams()
