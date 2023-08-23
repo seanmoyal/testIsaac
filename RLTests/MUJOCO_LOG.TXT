@@ -1,0 +1,6 @@
+Thu Jul 20 13:41:15 2023
+ERROR: m->nbody changed
+
+Fri Jul 21 12:31:23 2023
+WARNING: mju_openResource: unknown file 'C:/Users/moyal/PycharmProjects/testEnviSim/xmlDirectory/AlbertEnvironment2.xml'
+

@@ -1,0 +1,15 @@
+Mon Jul 10 10:42:10 2023
+WARNING: mju_openResource: unknown file 'xmlDirectory/Test1.xml'
+
+Mon Jul 10 10:42:38 2023
+WARNING: mju_openResource: unknown file 'testEnviSim/xmlDirectory/Test1.xml'
+
+Mon Jul 10 16:35:52 2023
+WARNING: mju_openResource: unknown file 'C:/Users/moyal/PycharmProjects/testEnviSim/PybulletSimu/roomManager.xml'
+
+Mon Jul 17 11:08:35 2023
+ERROR: m->nbody changed
+
+Tue Jul 18 09:25:38 2023
+ERROR: m->nbody changed
+
