@@ -49,13 +49,11 @@ class Room:  # classe d'une chambre ( niveau )
             if not a:
                 self.door_array[1].open(state_tensor)
 
-    def reset_room(self,state_tensor, model,
+    def reset_room(self,state_tensor,
                    character):  # dans la vidéo chaque simu se termine après 10s, on appelera cette fo après 10 s de simu
         # Evidemment elle est à compléter
-        for id_button in self.buttons_array.keys():
-            model.geom(model.body(id_button).geomadr[0]).rgba = [0, 1, 0, 1.0]
-            state_tensor[id_button][2]= state_tensor[id_button][2] + 1.9 * \
-                                         model.geom(model.body(id_button).geomadr[0]).size[2] ################################ CHANGE TO ISAAC ####################################
+        for id_button in self.buttons_array.keys():# j'ai viré le changement de rgb, inutile
+            state_tensor[id_button][2]= state_tensor[id_button][2] + 1.9 * 0.02 # supposing that 0.02 is the size of the button
             # truc a changer au dessus, jsp pq mais ca reset pas à la bonne hauteur
             # p.changeVisualShape(id_button,-1,rgbaColor=[0,1,0,1])
             self.buttons_array[id_button].is_pressed = False
