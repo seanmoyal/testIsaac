@@ -34,8 +34,8 @@ class AlbertCube(Cube):
         self.jumping = False  # pour le saut
         self.ori_jump = 0  # pour le saut
 
-    def has_fallen(self): # retourne True si Albert est tombé du niveau
-        pos = self.data.xpos[self.id]
+    def has_fallen(self,state_tensor): # retourne True si Albert est tombé du niveau
+        pos = state_tensor[self.id][:3]
         return pos[2] < self.room_manager.room_array[self.actual_room].global_coord[2]
 
     def add_time(self, step): #incrémente le temps passé dans la simulation
@@ -48,24 +48,22 @@ class AlbertCube(Cube):
     def reset_time(self): # reset le temps
         self.time = 0
 
-    def reset_pos_ori(self, pos, ori_euler): # reset la position de albert dans le niveau ( pos est sa nouvelle position dans le reférentiel du niveau )
+    def reset_pos_ori(self,state_tensor,pos, ori_euler): # reset la position de albert dans le niveau ( pos est sa nouvelle position dans le reférentiel du niveau )
         ori_quaternion = quaternion_from_euler(ori_euler)
-        room_coord = self.room_manager.room_array[self.actual_room].global_coord
-        new_pos = [pos[0] + room_coord[0], pos[1] + room_coord[1], pos[2] + room_coord[2]]
-        self.data.qpos[0:3] = new_pos
-        self.data.qpos[3:7] = ori_quaternion
+        state_tensor[self.id][:3]=pos
+        state_tensor[self.id][3:7]=ori_quaternion
 
 
-    def has_succeded(self): # regarde si albert à passé la porte de sortie
-        char_pos = self.data.xpos[self.id]
+    def has_succeded(self,state_tensor): # regarde si albert à passé la porte de sortie
+        char_pos = state_tensor[self.id][:3]
         room = self.room_manager.room_array[self.actual_room]
-        end_pos_j = room.global_coord[1] + room.width
+        end_pos_j = room.width
         if char_pos[1] > end_pos_j:
             room.door_array[1].close(room.door_array[0])
             self.actual_room += 1
             self.reset_time()
 
-    def raycasting(self, viewer):# vision d'albert : 21 rayons qui retournent le type d'objet rencontré et sa distance à ces objets
+    def raycasting(self, viewer):################################CHANGER A ISAAC ###################################################
         cube_pos = self.data.xpos[self.id]
         cube_ori = self.data.xquat[self.id]
         ray_vects=grid_vision(cube_pos,cube_ori,ray_length=10) # définit le quadrillage par les rayons
@@ -99,7 +97,7 @@ class AlbertCube(Cube):
 
         return obs
 
-    def jump_zer(self, jump, move): # fonction saut d'albert
+    def jump_zer(self, jump, move): ################################CHANGER A ISAAC ###################################################
         i = 13000  # force du jump sur un pas
         move_x = 0
         if move == 1:
@@ -117,17 +115,17 @@ class AlbertCube(Cube):
             self.data.xfrc_applied[self.id] = impulse
             self.jumping = False
 
-    def yaw_turn(self, rotate): # fonction de rotation d'albert
+    def yaw_turn(self,state_tensor, rotate): # fonction de rotation d'albert
         move_z = 0
         if rotate == 1:
             move_z = -1
         elif rotate == 2:
             move_z = 1
         angular_velocity = [0, 0, 10 * move_z]  # mz=1/0/-1
-        self.data.qvel[3:6] = angular_velocity
+        state_tensor[self.id][10:13] = angular_velocity
 
 
-    def move(self, move):  # fonction définissant les mouvements sur le sol
+    def move(self, move): ################################CHANGER A ISAAC ###################################################
         move_x = 0
         if move == 1:
             move_x = -1
@@ -155,7 +153,7 @@ class AlbertCube(Cube):
     def get_id(self):
         return self.id
 
-    def get_observation(self, viewer): # fonction retournant l'observation d'albert actualisé
+    def get_observation(self, viewer): ################################CHANGER A ISAAC ###################################################
         contact_results = self.raycasting(viewer)
         current_observation = np.empty(42)
         for i in range(len(contact_results)):
@@ -195,9 +193,9 @@ class AlbertCube(Cube):
             return 6
         return 0
 
-    def calc_distance(self, id):  # calcul de distance entre un objet et albert
-        pos_object = self.model.geom(id).pos
-        pos_albert = self.data.xpos[self.id]
+    def calc_distance(self,state_tensor, id):  # calcul de distance entre un objet et albert
+        pos_object = state_tensor[id][:3]
+        pos_albert = state_tensor[self.id][:3]
 
         distance = np.sqrt(sum([(pos_albert[i] - pos_object[i]) ** (2) for i in range(3)]))
 
@@ -228,14 +226,14 @@ class AlbertCube(Cube):
             return None
         return self.memory_state[len(self.memory_state) - 2]
 
-    def get_current_state(self): # fonction actualisant l'état courant du système et retournant les 5 derniers états
+    def get_current_state(self,state_tensor): # fonction actualisant l'état courant du système et retournant les 5 derniers états
         room = self.room_manager.room_array[self.actual_room]
         current_state = {}
-        pos_albert = self.model.body(self.id).pos
+        pos_albert = state_tensor[self.id][:3]
         buttons = room.buttons_array.values()
         buttons = binarize(buttons)
         door = np.prod(buttons)
-        door_pos = self.model.body(room.door_array[0]).pos
+        door_pos = state_tensor[room.door_array[0]][:3]
 
         current_state["CharacterPosition"] = [pos_albert[0], pos_albert[1], pos_albert[2]]
         current_state["doorState"] = door
@@ -262,12 +260,12 @@ class AlbertCube(Cube):
                 if type == 1:
                     pushed_button = self.room_manager.room_array[0].buttons_array.get(id)
                     if (pushed_button.is_pressed == False):
-                        pushed_button.got_pressed(self.model)
+                        pushed_button.got_pressed(self.model)################################ CHANGE TO ISAAC ####################################
             while (len(contact_types) < 6):
                 contact_types.append(0)
             current_state["contactPoints"] = contact_types
 
-        self.room_manager.room_array[self.actual_room].check_buttons_pushed(self.model)
+        self.room_manager.room_array[self.actual_room].check_buttons_pushed(self.model)################################ CHANGE TO ISAAC ####################################
 
         self.add_to_memory_state(current_state)
 
@@ -283,7 +281,7 @@ class AlbertCube(Cube):
                     obs[105 + i * 21 + (j - 21)] = self.memory_observation[i][j]
         return obs
 
-    def get_contact_points(self): # retourne les identifiants des objets en contact avec albert
+    def get_contact_points(self): # retourne les identifiants des objets en contact avec albert ################################ CHANGE TO ISAAC ####################################
 
         n = len(self.data.contact.geom1)
         contact_points = []
