@@ -2,8 +2,8 @@ import BaseTask
 from isaacgym import gymapi
 from numpy import random
 import gymtorch
-from ObjetsEnvironnement.RoomManager import RoomManager
-from ObjetsEnvironnement.AlbertCube import AlbertCube
+from Isaac.ObjetsEnvironnement.RoomManager import RoomManager
+from Isaac.ObjetsEnvironnement.AlbertCube import AlbertCube
 import numpy as np
 class AlbertEnvironment(BaseTask):
 

@@ -1,11 +1,11 @@
-from MujocoSimu.ObjetsEnvironnement.Button import Button
-from MujocoSimu.ObjetsEnvironnement.Door import Door
+from Isaac.ObjetsEnvironnement.Button import Button
+from Isaac.ObjetsEnvironnement.Door import Door
 from scipy.spatial.transform import Rotation
 
 
 class Room:  # classe d'une chambre ( niveau )
     def __init__(self, model, name='room1'):
-        self.global_coord = model.body(name).pos  # l=0.5 # Coordonées globales de la chambre
+        self.global_coord = [0,0,0]  # l=0.5 # Coordonées globales de la chambre
         self.buttons_array = {}
         self.floor_array = []
         self.wall_array = []
@@ -19,7 +19,7 @@ class Room:  # classe d'une chambre ( niveau )
 
         # DEFINITION DU STATE :
 
-    def init_room(self, model, name='room1'):
+    def init_room(self, model, name='room1'): ################################ CHANGE TO ISAAC ####################################
         self.id = model.body(name).id
         id = self.id + 1
         while model.body(id).parentid[0] == self.id:
@@ -40,56 +40,33 @@ class Room:  # classe d'une chambre ( niveau )
                 self.fences_array.append(id)
             id += 1
 
-    def change_global_coord(self, data, x, y,
-                            l):  # fonction qui translate une chambre d'un endroit à un autre ( translation de tout ce qu'il y a dedans aussi)
-        old_global_coord = self.global_coord
-        self.global_coord = [x, y, l]
-        translation = [x - old_global_coord[0], y - old_global_coord[1], l - old_global_coord[2]]
-
-        for cube_id in self.floor_array:
-            self.translate(data, cube_id, translation)
-
-        for cube_id in self.wall_array:
-            self.translate(data, cube_id, translation)
-
-        for button_id in self.buttons_array.keys():
-            self.translate(data, button_id, translation)
-
-        for fence_id in self.fences_array:
-            self.translate(data, fence_id, translation)
-
-        for iblock_id in self.iblocks_array:
-            self.translate(data, iblock_id, translation)
-
-        self.translate(data, self.door_array[0], translation)
-
-    def check_buttons_pushed(self, model):
+    def check_buttons_pushed(self, state_tensor):
         if not self.door_array[1].is_opened:
             a = False
             for button in self.buttons_array.values():
                 if not button.is_pressed:
                     a = True
             if not a:
-                self.door_array[1].open(model)
+                self.door_array[1].open(state_tensor)
 
-    def reset_room(self, model,
+    def reset_room(self,state_tensor, model,
                    character):  # dans la vidéo chaque simu se termine après 10s, on appelera cette fo après 10 s de simu
         # Evidemment elle est à compléter
         for id_button in self.buttons_array.keys():
             model.geom(model.body(id_button).geomadr[0]).rgba = [0, 1, 0, 1.0]
-            model.body(self.id).pos[2] = model.body(id_button).pos[2] + 1.9 * \
-                                         model.geom(model.body(id_button).geomadr[0]).size[2]
+            state_tensor[id_button][2]= state_tensor[id_button][2] + 1.9 * \
+                                         model.geom(model.body(id_button).geomadr[0]).size[2] ################################ CHANGE TO ISAAC ####################################
             # truc a changer au dessus, jsp pq mais ca reset pas à la bonne hauteur
             # p.changeVisualShape(id_button,-1,rgbaColor=[0,1,0,1])
             self.buttons_array[id_button].is_pressed = False
         character.reset_time()
 
         if self.door_array[1].is_opened:
-            self.door_array[1].close(model)
+            self.door_array[1].close(state_tensor)
 
-    def translate(self, data, id,
+    def translate(self, state_tensor, id,
                   translation):  # fonction de translation utilisiée dans changeglobal_coord(), translate un objet d'identifiant Id
-        old_position = data.xpos[id]
+        old_position = state_tensor[id][:3]
 
         new_position = [
             old_position[0] + translation[0],
@@ -97,7 +74,7 @@ class Room:  # classe d'une chambre ( niveau )
             old_position[2] + translation[2]
         ]
 
-        data.xpos[id] = new_position
+        state_tensor[id][:3] = new_position
 
 
 def quaternion_from_euler(euler):

@@ -1,4 +1,4 @@
-from MujocoSimu.ObjetsEnvironnement.Cube import Cube
+from Isaac.ObjetsEnvironnement.Cube import Cube
 from scipy.spatial.transform import Rotation
 class Button(Cube): # Classe des bouttons : spots verts ou l'acteur doit passer pour ouvrir la porte
 

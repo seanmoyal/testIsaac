@@ -2,7 +2,7 @@ import math
 
 import keyboard
 import numpy as np
-from MujocoSimu.ObjetsEnvironnement.Cube import Cube
+from Isaac.ObjetsEnvironnement.Cube import Cube
 import mujoco as mj
 from scipy.spatial.transform import Rotation
 
