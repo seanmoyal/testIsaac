@@ -107,11 +107,13 @@ class AlbertEnvironment(BaseTask):
         depth = 6
         width = 11
         height = 3
+        id=1
         for i in range(depth):
             for j in range(width):
                 pose = gymapi.Transform()
                 pose.p = gymapi.Vec3(x + i, y + j, l)  # pose.r pour l'orientation
-                name = "cube" + str(i * j)
+                name = "cube" + str(id)
+                i+=1
                 actor_handle_cube = self.gym.create_actor(env, asset_base_cube, pose, name, i, 1)
                 self.actor_handles.append(actor_handle_cube)
 
@@ -122,24 +124,23 @@ class AlbertEnvironment(BaseTask):
                                 pose = gymapi.Transform()
                                 pose.p = gymapi.Vec3(x + i, y + j, l + 1 + z)  # pose.r pour l'orientation
                                 name = "door"
+                                id+=1
                                 actor_handle_door = self.gym.create_actor(env, asset_door, pose, name, i, 1)
                                 self.actor_handles.append(actor_handle_door)
                         else:
                             pose = gymapi.Transform()
                             pose.p = gymapi.Vec3(x + i, y + j, l + 1 + z)  # pose.r pour l'orientation
-                            name = "cube" + str(i * j + z)
+                            name = "cube" + str(id)
+                            id+=1
                             actor_handle_cube = self.gym.create_actor(env, asset_base_cube, pose, name, i, 1)
                             self.actor_handles.append(actor_handle_cube)
 
     def pre_physics_step(self, actions):
         # apply actions
-        # prepare DOF force tensor
-        forces = torch.zeros((num_envs, dofs_per_env), dtype=torch.float32, device=self.device)
 
-        # scale actions and write to cart DOF slice
-        forces[:, 0] = actions * self.max_push_force
-        # apply the forces to all actors
-        self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(forces))
+        for i in range(num_envs):
+            self.albert_array[i].take_action(actions[3*i:3*(i+1)])
+
 
     def post_physics_step(self):
         # compute observations,rewards,and resets
