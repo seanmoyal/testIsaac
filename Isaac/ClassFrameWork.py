@@ -6,6 +6,7 @@ from Isaac.ObjetsEnvironnement.RoomManager import RoomManager
 from Isaac.ObjetsEnvironnement.AlbertCube import AlbertCube
 from Isaac.ObjetsEnvironnement.Room import Room
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 
 class AlbertEnvironment(BaseTask):
@@ -99,10 +100,16 @@ class AlbertEnvironment(BaseTask):
         self.root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
         for i in range(self.num_envs):  # on va mettre ici la création des objets
-            self.albert_array[i] = AlbertCube(self.room_manager_array[i], i, 0, num_bodies)
-            self.room_manager_array[i].add_room(Room(i,num_bodies))
+            self.albert_array[i] = AlbertCube(self.room_manager_array[i], i, 0, self.num_bodies)
+            self.room_manager_array[i].add_room(Room(i,self.num_bodies))
 
         self.time_passed = [0 for i in range(self.num_envs)]
+        self.time_episode = 10
+        self.step = 0.01  # dt
+        self.num_bodies = 60 # CHANGER CETTE VALEUR ########################### CHANGER ##############################
+        self.curr_state = self.get_current_state()
+        self.prev_state = self.get_previous_state()
+        self.actions = None
 
     def build_basic_room(self, env, asset_base_cube, asset_door):  # construction de la structure de la chambre et stockage des blocs dans une liste
         x, y, l = 0, 0, 0
@@ -139,14 +146,23 @@ class AlbertEnvironment(BaseTask):
 
     def pre_physics_step(self, actions):
         # apply actions
-
+        self.actions=actions # JE PEUX FAIRE CA ??? ############################ ISAAC ######################################
         for i in range(self.num_envs):
             self.albert_array[i].take_action(actions[3*i:3*(i+1)])
 
 
-    def post_physics_step(self):
+    def post_physics_step(self):#
         # compute observations,rewards,and resets
-        ...
+        self.compute_observations()
+        self.compute_rewards()
+
+        # trouver les ids à reset
+        env_ids = []
+        for id in range(self.num_envs):
+            if (self.time_passed[id] >= self.time_episode or self.albert_array[id].has_fallen() or self.achieved_maze(id)):
+                env_ids.append(id)
+                self.time_passed[id] += self.step
+        self.reset(env_ids)
 
     def reset(self, env_ids):
         # number of environments to reset
@@ -156,14 +172,13 @@ class AlbertEnvironment(BaseTask):
             room.reset_room(self.root_tensor, self.albert_array[id])
 
             # generate random DOF positions and velocities
-            pos = torch.rand((1, 3), device=self.device) # Les bails de torch je capte pas trop
-            pos[3]=0.75
+            pos = [np.random.uniform(1, 3),np.random.uniform(1, 5),0.75]
 
-            ori_euler = torch.rand((1, 3), device=self.device)#ecrire le bon truc puis le mettre en quat ################################## CHANGE TO ISAAC #####################################
-            ori=quat_from_euler(ori_euler)
+            ori_euler = [0,0,np.random.uniform(-np.pi, np.pi)]#ecrire le bon truc puis le mettre en quat ################################## CHANGE TO ISAAC #####################################
+            ori = quat_from_euler(ori_euler)
             # rewrite root tensor
-            self.root_tensor[id*num_bodies, :3] = pos
-            self.root_tensor[id*num_bodies, 3:7] = ori
+            self.root_tensor[id*self.num_bodies, :3] = pos
+            self.root_tensor[id*self.num_bodies, 3:7] = ori
 
         self.refresh_actor_root_state_tensor(self.sim)
 
@@ -184,15 +199,17 @@ class AlbertEnvironment(BaseTask):
         for i in range(self.num_envs):
             self.obs_buf[i]=self.albert_array[i].get_observation()
 
+        self.update_state()
+
     def compute_rewards(self):
         # a revoir c'est casse couille : vidéo : à 47 min
         for i in range(self.num_envs):
-            self.rew_buf[i]=compute_reward(i)
+            self.rew_buf[i]=self.compute_reward(i)
 
     def compute_reward(self,i):
         reward = 0
         contact = self.curr_state["contactPoints"] # regarder comment modifier la space du State courant
-        if actions[3*i:3*(i+1)][2] == 1: # regarder comment passer action
+        if self.actions[3*i:3*(i+1)][2] == 1: # regarder comment passer action
             reward -= 0.05
         if (3 in contact or 4 in contact or 5 in contact):
             reward -= 0.1
@@ -206,19 +223,23 @@ class AlbertEnvironment(BaseTask):
         # compute done
         return reward
 
-    def achieved_maze(self,i):# modification pour le curr_state ############################## CHANGE TO ISAAC #########################
-        char_pos = self.root_tensor[i*self.num_envs][:3]
-        door_pos = self.root_tensor[i*self.num_envs][:3] # ajouter + id_porte dans les [] ################################# CHANGE TO ISAAC ########################
-        dist = np.sqrt(sum([(char_pos[j] - door_pos[j]) ** (2) for j in range(2)]))
-        return (dist < 0.5)  # pour l'instant 0.5 mais en vrai dépend de la dim de la sortie et du character
 
     def button_distance(self,i):# tout est à modifier ############################## CHANGE TO ISAAC #########################
-        n = len(self.character.current_state["buttonsState"])
-        if self.prev_state == None:
+        n = len(self.current_state[i]["buttonsState"])
+        if self.prev_state[i] == None:
             return 0
 
-        d = sum([np.abs(self.curr_state["buttonsState"][i] - self.prev_state["buttonsState"][i]) for i in range(n)])
+        d = sum([np.abs(self.curr_state["buttonsState"][i][j] - self.prev_state["buttonsState"][i][j]) for j in range(n)])
         return d
+
+
+    def achieved_maze(self,i):
+        door_id = self.room_manager_array[i].room_array[self.albert_array[i].actual_room]
+
+        character_pos = self.root_tensor[i*self.num_bodies]
+        door_pos = self.root_tensor[i*self.num_bodies + door_id]
+        dist = np.sqrt(sum([(character_pos[i] - door_pos[i]) ** (2) for i in range(2)]))
+        return (dist < 0.5)  # pour l'instant 0.5 mais en vrai dépend de la dim de la sortie et du character
 
     def prepare_assets(self):
 
@@ -279,3 +300,27 @@ class AlbertEnvironment(BaseTask):
         sim_params.flex.warm_start = 0.5
 
         return sim_params
+
+    def get_current_state(self):
+        current_state = []
+        for id in range(self.num_envs):
+            current_state.append(self.albert_array[id].current_state)
+
+        return current_state
+
+    def get_previous_state(self):
+        prev_state = []
+        for id in range(self.num_envs):
+            prev_state.append(self.albert_array[id].get_previous_state())
+
+        return prev_state
+
+    def update_state(self):
+        self.curr_state = self.get_current_state()
+        self.prev_state = self.get_previous_state()
+
+
+def quat_from_euler(ori_euler):
+    eu = Rotation.from_euler('zyx', ori_euler, degrees=False)
+    quat = eu.as_quat()
+    return quat
