@@ -72,8 +72,7 @@ class Room:  # classe d'une chambre ( niveau )
             if not a:
                 self.door_array[1].open(state_tensor)
 
-    def reset_room(self,state_tensor,
-                   character):  # dans la vidéo chaque simu se termine après 10s, on appelera cette fo après 10 s de simu
+    def reset_room(self,state_tensor,character):  # dans la vidéo chaque simu se termine après 10s, on appelera cette fo après 10 s de simu
         # Evidemment elle est à compléter
         for id_button in self.buttons_array.keys():# j'ai viré le changement de rgb, inutile
             state_tensor[id_button][2]= state_tensor[id_button][2] + 1.9 * 0.02 # supposing that 0.02 is the size of the button

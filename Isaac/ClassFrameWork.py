@@ -102,6 +102,8 @@ class AlbertEnvironment(BaseTask):
             self.albert_array[i] = AlbertCube(self.room_manager_array[i], i, 0, num_bodies)
             self.room_manager_array[i].add_room(Room(i,num_bodies))
 
+        self.time_passed = [0 for i in range(self.num_envs)]
+
     def build_basic_room(self, env, asset_base_cube, asset_door):  # construction de la structure de la chambre et stockage des blocs dans une liste
         x, y, l = 0, 0, 0
         depth = 6
@@ -149,22 +151,29 @@ class AlbertEnvironment(BaseTask):
     def reset(self, env_ids):
         # number of environments to reset
         num_resets = len(env_ids)
+        for id in env_ids:
+            room = self.room_manager_array[id].room_array[self.albert_array[id].actual_room]
+            room.reset_room(self.root_tensor, self.albert_array[id])
 
-        # generate random DOF positions and velocities
-        p = 0.3 * (torch.rand((num_resets, dofs_per_env), device=self.device) - 0.5)
-        v = 0.5 * (torch.rand((num_resets, dofs_per_env), device=self.device) - 0.5)
+            # generate random DOF positions and velocities
+            pos = torch.rand((1, 3), device=self.device) # Les bails de torch je capte pas trop
+            pos[3]=0.75
 
-        # write new states to DOF state tensor
-        self.dof_states[env_ids, 0] = p
-        self.dof_states[env_ids, 1] = v
+            ori_euler = torch.rand((1, 3), device=self.device)#ecrire le bon truc puis le mettre en quat ################################## CHANGE TO ISAAC #####################################
+            ori=quat_from_euler(ori_euler)
+            # rewrite root tensor
+            self.root_tensor[id*num_bodies, :3] = pos
+            self.root_tensor[id*num_bodies, 3:7] = ori
 
-        # Apply the new DOF states for the selected envs, using env_ids as the actor index tensor
-        self.gym.set_dof_state_tensor_indexed(self.sim, self.dof_states_desc, gymtorch.unwrap_tensor(env_ids),
-                                              num_resets)
+        self.refresh_actor_root_state_tensor(self.sim)
+
+        self.compute_observations()
+        for id in env_ids:
+            self.time_passed[id] = 0
 
     def compute_observations(self):
         # refresh state tensor
-        self.gym.refresh_dof_state_tensor(self.sim)
+        self.refresh_actor_root_state_tensor(self.sim)
 
         # ca c'est cartpole, ou changer obs_buf de dimensions ? jsp mais à trouver
         #self.obs_buf[:, 0] = self.dof_pos[:, 0]
