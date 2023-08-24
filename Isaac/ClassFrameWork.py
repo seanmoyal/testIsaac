@@ -42,7 +42,7 @@ class AlbertEnvironment(BaseTask):
         #####################  ENVIRONMENT SETTING  #####################
 
         # set up the env grid
-        num_envs = 64
+        self.num_envs = 64
         envs_per_row = 8
         env_spacing = 2.0
         env_lower = gymapi.Vec3(-env_spacing, 0.0, -env_spacing)
@@ -53,11 +53,11 @@ class AlbertEnvironment(BaseTask):
         self.actor_handles = []
 
         # instanciate Room Manager
-        self.room_manager_array = np.array([RoomManager() for i in range(num_envs)])
-        self.albert_array = np.empty((num_envs,))
+        self.room_manager_array = np.array([RoomManager() for i in range(self.num_envs)])
+        self.albert_array = np.empty((self.num_envs,))
 
         # create and populate the environments
-        for i in range(num_envs):
+        for i in range(self.num_envs):
             env = self.gym.create_env(self.sim, env_lower, env_upper, envs_per_row)
             envs.append(env)
 
@@ -96,9 +96,9 @@ class AlbertEnvironment(BaseTask):
 
         # pos,ori,vel,ang_vel des root ( a voir comment on fait si la compo de la room n'est pas full root
         _root_tensor = self.gym.acquire_actor_root_state_tensor(self.sim)
-        root_tensor = gymtorch.wrap_tensor(_root_tensor)
+        self.root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
-        for i in range(num_envs):  # on va mettre ici la création des objets
+        for i in range(self.num_envs):  # on va mettre ici la création des objets
             self.albert_array[i] = AlbertCube(self.room_manager_array[i], i, 0, num_bodies)
             self.room_manager_array[i].add_room(Room(i,num_bodies))
 
@@ -138,7 +138,7 @@ class AlbertEnvironment(BaseTask):
     def pre_physics_step(self, actions):
         # apply actions
 
-        for i in range(num_envs):
+        for i in range(self.num_envs):
             self.albert_array[i].take_action(actions[3*i:3*(i+1)])
 
 
@@ -166,15 +166,50 @@ class AlbertEnvironment(BaseTask):
         # refresh state tensor
         self.gym.refresh_dof_state_tensor(self.sim)
 
-        # copy DOF states to observation tensor
-        self.obs_buf[:, 0] = self.dof_pos[:, 0]
-        self.obs_buf[:, 1] = self.dof_vel[:, 0]
-        self.obs_buf[:, 2] = self.dof_pos[:, 1]
-        self.obs_buf[:, 3] = self.dof_vel[:, 1]
+        # ca c'est cartpole, ou changer obs_buf de dimensions ? jsp mais à trouver
+        #self.obs_buf[:, 0] = self.dof_pos[:, 0]
+        #self.obs_buf[:, 1] = self.dof_vel[:, 0]
+        #self.obs_buf[:, 2] = self.dof_pos[:, 1]
+        #self.obs_buf[:, 3] = self.dof_vel[:, 1]
+
+        for i in range(self.num_envs):
+            self.obs_buf[i]=self.albert_array[i].get_observation()
 
     def compute_rewards(self):
         # a revoir c'est casse couille : vidéo : à 47 min
-        self.rew_buf[:] = compute_reward(params)
+        for i in range(self.num_envs):
+            self.rew_buf[i]=compute_reward(i)
+
+    def compute_reward(self,i):
+        reward = 0
+        contact = self.curr_state["contactPoints"] # regarder comment modifier la space du State courant
+        if actions[3*i:3*(i+1)][2] == 1: # regarder comment passer action
+            reward -= 0.05
+        if (3 in contact or 4 in contact or 5 in contact):
+            reward -= 0.1
+        if (self.achieved_maze(i)):
+            reward += 1
+        if (self.button_distance(i) != 0):
+            reward += 1
+        if self.curr_state["CharacterPosition"][2] <= self.room_manager.room_array[0].global_coord[
+            2]:  # a changer pr que ce soit qu'une fois ( quand il tombe )
+            reward -= 0.5
+        # compute done
+        return reward
+
+    def achieved_maze(self,i):# modification pour le curr_state ############################## CHANGE TO ISAAC #########################
+        char_pos = self.root_tensor[i*self.num_envs][:3]
+        door_pos = self.root_tensor[i*self.num_envs][:3] # ajouter + id_porte dans les [] ################################# CHANGE TO ISAAC ########################
+        dist = np.sqrt(sum([(char_pos[j] - door_pos[j]) ** (2) for j in range(2)]))
+        return (dist < 0.5)  # pour l'instant 0.5 mais en vrai dépend de la dim de la sortie et du character
+
+    def button_distance(self,i):# tout est à modifier ############################## CHANGE TO ISAAC #########################
+        n = len(self.character.current_state["buttonsState"])
+        if self.prev_state == None:
+            return 0
+
+        d = sum([np.abs(self.curr_state["buttonsState"][i] - self.prev_state["buttonsState"][i]) for i in range(n)])
+        return d
 
     def prepare_assets(self):
 
