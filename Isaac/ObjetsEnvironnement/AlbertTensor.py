@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation
 # Classe de l'Acteur : Albert
 class AlbertCube(Cube):
 
-    def __init__(self, room_manager,id_env,id,num_bodies,gym,env,handle,state_tensor):
+    def __init__(self, room_manager,id_env,id,num_bodies,gym,env,num_envs,state_tensor):
         # super().__init__(hExtents=[0.25,0.25,0.25])
         self.actual_room = 0                   # niveau actuel d'entrainement dans la liste du room manager
         self.room_manager = room_manager       # classe contenant la liste de tous les niveaux d'entraînement possibles
@@ -22,7 +22,7 @@ class AlbertCube(Cube):
         self.state_tensor=state_tensor
         self.gym = gym
         self.env=env
-        self.handle=handle
+        self.num_envs=num_envs
 
         # espace d'état ( albert n'y a pas "acces")
         self.memory_state = []                        # stockage des 5 derniers états
@@ -146,9 +146,10 @@ class AlbertCube(Cube):
             self.gym.apply_body_forces(env=self.env,rigidHandle=self.handle,force=impulse,torque=None,space=gymapi.CoordinateSpace.LOCAL_SPACE)
 
     def take_action(self, action):  # 1: rotate, 2 : move, 3 : jump # fonction de traitement de l'action à effectuer
-        rotate = action[0]
-        move = action[1]
-        jump = action[2]
+        action_reshaped = action.reshape((self.num_envs,3))
+        rotate = action_reshaped[:,0]
+        move = action_reshaped[:,1]
+        jump = action_reshaped[:,2]
         self.yaw_turn(rotate)
         if 2 in self.current_state["contactPoints"]:
             self.move(move)
