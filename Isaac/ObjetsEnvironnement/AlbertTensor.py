@@ -114,7 +114,7 @@ class AlbertCube(Cube):
         self.x_factor = move_x
         ori_tensor = torch.tensor([self.state_tensor[self.id_array[i]][3:7] for i in range(self.num_envs)])
         self.oriJump = quaternion_to_euler(ori_tensor)############## pour l'instant osef mais enft on ca peut etre l'utiliser pour direct changer de referentiel dans la force
-        stack1=torch.stack((torch.zeros(1,self.num_envs),jump*i*self.in_contact_with_floor_or_button()),dim=0)######## changer in_contact_with_floor
+        stack1=torch.stack((torch.zeros(1,self.num_envs),jump*i*torch.when(self.in_contact_with_floor_or_button(),torch.full((self.num_envs,)),torch.zeros((self.num_envs,)))),dim=0)######## changer in_contact_with_floor
         impulse = torch.stack((move_x*500,stack1),dim=1)
         self.gym.apply_rigid_body_force_tensors(self.sim, forceTensor=impulse, posTensor=self.get_pos_tensor(),space=gymapi.CoordinateSpace.LOCAL_SPACE)
 
@@ -139,10 +139,13 @@ class AlbertCube(Cube):
         euler = quaternion_to_euler(ori_tensor)
         mat = euler_to_rotation_matrix(euler)
         linear_velocity = torch.dot(mat, linear_velocity)
-        if (self.in_contact_with_floor_or_button()):
-            #impulse = torch.cat((np.array(linear_velocity), torch.zeros((self.num_envs,3))),dim=0) # dépend de la size de force enft
-            impulse = linear_velocity
-            self.gym.apply_rigid_body_force_tensors(self.sim,forceTensor = impulse,posTensor=self.get_pos_tensor(),space=gymapi.CoordinateSpace.LOCAL_SPACE)
+        contact_floor_button=self.in_contact_with_floor_or_button()
+        contact_binary = torch.when(contact_floor_button,torch.full((self.num_envs,3),1),torch.zeros((self.num_envs,3)))
+        linear_velocity=linear_velocity*contact_binary # si on est dans les airs, ca doit valoir 0
+
+        #impulse = torch.cat((np.array(linear_velocity), torch.zeros((self.num_envs,3))),dim=0) # dépend de la size de force enft
+        impulse = linear_velocity
+        self.gym.apply_rigid_body_force_tensors(self.sim,forceTensor = impulse,posTensor=self.get_pos_tensor(),space=gymapi.CoordinateSpace.LOCAL_SPACE)
 
     def take_action(self, action):  # 1: rotate, 2 : move, 3 : jump # fonction de traitement de l'action à effectuer
         action_reshaped = action.reshape((self.num_envs,3))
@@ -175,7 +178,7 @@ class AlbertCube(Cube):
         observation = self.flat_memory()
         return observation
 
-    def check_type(self, id, room): # retourne à quel type d'objet l'id fait référence
+    def check_type(self, id_tensor, room_tensor): # retourne à quel type d'objet l'id fait référence
         buttons = room.buttons_array.keys()
         if id in buttons:
             return 1
@@ -304,17 +307,12 @@ class AlbertCube(Cube):
         return contact_points
 
     def in_contact_with_floor_or_button(self): # retourne true si albert est en contact avec le sol ou un boutton
-        contact_points = self.get_contact_points()
-        n = len(contact_points)
-        if n == 0:
-            return False
-        for i in range(n):
-            a = self.check_type(contact_points[i][0], self.room_manager.room_array[self.actual_room])
+        contact_points_tensor = self.get_contact_points() ############### Cette fonction est aussi à changer
+        types_checked_tensor = self.check_type(contact_points_tensor,self.room_manager.room_array[self.actual_room])#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        # à changer pour un tenseur d'actual room et tout
 
-            print('contact : '+str(a))
-            if a == 2 or a == 1:
-                return True
-        return False
+        bool_result = torch.tensor([(types_checked_tensor[i]==1).any() | (types_checked_tensor[i]==2).any() for i in range(self.num_envs)])
+        return bool_result
 
     def get_pos_tensor(self):
         positions=torch.tensor([self.state_tensor[self.id_array[i]][0:3] for i in range(self.num_envs)])
