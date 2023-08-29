@@ -1,5 +1,6 @@
 import math
 import gymapi
+import torch
 import keyboard
 import numpy as np
 from Isaac.ObjetsEnvironnement.Cube import Cube
@@ -9,18 +10,18 @@ from scipy.spatial.transform import Rotation
 # Classe de l'Acteur : Albert
 class AlbertCube(Cube):
 
-    def __init__(self, room_manager,id_env,id,num_bodies,gym,env,num_envs,state_tensor):
+    def __init__(self,sim, room_manager,num_bodies,gym,env,num_envs,state_tensor):
         # super().__init__(hExtents=[0.25,0.25,0.25])
         self.actual_room = 0                   # niveau actuel d'entrainement dans la liste du room manager
         self.room_manager = room_manager       # classe contenant la liste de tous les niveaux d'entraînement possibles
-        self.id_env = id_env
         self.num_bodies = num_bodies
-        self.id = id_env*num_bodies+id
+        self.id_array =torch.tensor([i*num_bodies for i in range(num_envs)])
         self.time = 0                          # temps passé dans la simu depuis sa création
 
         # Caracs of simulation
         self.state_tensor=state_tensor
         self.gym = gym
+        self.sim=sim
         self.env=env
         self.num_envs=num_envs
 
@@ -130,20 +131,21 @@ class AlbertCube(Cube):
         self.gym.apply_body_forces(env=self.env,rigidHandle=self.handle,force=None,torque=angular_force,space=gymapi.CoordinateSpace.LOCAL_SPACE)
 
 
-    def move(self, move):
-        move_x = 0
-        if move == 1:
-            move_x = -1
-        elif move == 2:
-            move_x = 1
+    def move(self, move):############################## FINI ###########################
+        minus_ones_tensor = torch.full((self.num_envs,),-1)
+        ones_tensor = torch.full((self.num_envs,), 1)
+        zero_tensor = torch.zeros((self.num_envs,))
+        move_x = torch.where(move==zero_tensor,zero_tensor,torch.where(ones_tensor==move,minus_ones_tensor,ones_tensor))
+        torch.stack((move_x*500,torch.zeros((2,self.num_envs))),dim=1)
         linear_velocity = [move_x * 500, 0, 0]
-        ori = self.state_tensor[self.id][3:7]
-        euler = euler_from_quaternion(ori)
+        ori_tensor = torch.tensor([self.state_tensor[self.id_array[i]][3:7] for i in range(self.num_envs)])
+        euler = quaternion_to_euler(ori_tensor)
         mat = euler_to_rotation_matrix(euler)
-        linear_velocity = np.dot(mat, linear_velocity)
+        linear_velocity = torch.dot(mat, linear_velocity)
         if (self.in_contact_with_floor_or_button()):
-            impulse = np.concatenate((np.array(linear_velocity), np.array([0, 0, 0])))
-            self.gym.apply_body_forces(env=self.env,rigidHandle=self.handle,force=impulse,torque=None,space=gymapi.CoordinateSpace.LOCAL_SPACE)
+            #impulse = torch.cat((np.array(linear_velocity), torch.zeros((self.num_envs,3))),dim=0) # dépend de la size de force enft
+            impulse = linear_velocity
+            self.gym.apply_rigid_body_force_tensors(self.sim,forceTensor = impulse,posTensor=self.get_pos_tensor(),space=gymapi.CoordinateSpace.LOCAL_SPACE)
 
     def take_action(self, action):  # 1: rotate, 2 : move, 3 : jump # fonction de traitement de l'action à effectuer
         action_reshaped = action.reshape((self.num_envs,3))
@@ -317,6 +319,10 @@ class AlbertCube(Cube):
                 return True
         return False
 
+    def get_pos_tensor(self):
+        positions=torch.tensor([self.state_tensor[self.id_array[i]][0:3] for i in range(self.num_envs)])
+        return positions
+
 
 def binarize(buttons): # retourne une liste d'états des bouttons ( 1 si le boutton à été appuyé dessus, 0 sinon )
     list = []
@@ -328,49 +334,59 @@ def binarize(buttons): # retourne une liste d'états des bouttons ( 1 si le bout
     return list
 
 
-def euler_to_rotation_matrix(euler):
-    # Convert Euler angles to rotation matrix
-    # R = Rz(yaw) * Ry(pitch) * Rx(roll)
-    roll = euler[0]
-    pitch = euler[1]
-    yaw = euler[2]
-    cos_r, sin_r = np.cos(roll), np.sin(roll)
-    cos_p, sin_p = np.cos(pitch), np.sin(pitch)
-    cos_y, sin_y = np.cos(yaw), np.sin(yaw)
+def euler_to_rotation_matrix(euler_angles):
+    """
+    Convert a tensor of Euler angles to a tensor of rotation matrices.
 
-    rotation_matrix = np.array([
-        [cos_y * cos_p, cos_y * sin_p * sin_r - sin_y * cos_r, cos_y * sin_p * cos_r + sin_y * sin_r],
-        [sin_y * cos_p, sin_y * sin_p * sin_r + cos_y * cos_r, sin_y * sin_p * cos_r - cos_y * sin_r],
-        [-sin_p, cos_p * sin_r, cos_p * cos_r]
-    ])
+    Args:
+        euler_angles (torch.Tensor): Tensor of Euler angles in radians with shape (..., 3).
 
-    return rotation_matrix
+    Returns:
+        torch.Tensor: Tensor of rotation matrices with shape (..., 3, 3).
+    """
+    roll, pitch, yaw = torch.unbind(euler_angles, dim=-1)
+
+    # Calculate the individual rotation matrices
+    cos_r, sin_r = torch.cos(roll), torch.sin(roll)
+    cos_p, sin_p = torch.cos(pitch), torch.sin(pitch)
+    cos_y, sin_y = torch.cos(yaw), torch.sin(yaw)
+
+    rotation_x = torch.stack([torch.ones_like(cos_r), torch.zeros_like(cos_r), torch.zeros_like(cos_r),
+                              torch.zeros_like(cos_r), cos_r, -sin_r,
+                              torch.zeros_like(cos_r), sin_r, cos_r], dim=-1).view(*euler_angles.shape[:-1], 3, 3)
+
+    rotation_y = torch.stack([cos_p, torch.zeros_like(cos_p), sin_p,
+                              torch.zeros_like(cos_p), torch.ones_like(cos_p), torch.zeros_like(cos_p),
+                              -sin_p, torch.zeros_like(cos_p), cos_p], dim=-1).view(*euler_angles.shape[:-1], 3, 3)
+
+    rotation_z = torch.stack([cos_y, -sin_y, torch.zeros_like(cos_y),
+                              sin_y, cos_y, torch.zeros_like(cos_y),
+                              torch.zeros_like(cos_y), torch.zeros_like(cos_y), torch.ones_like(cos_y)], dim=-1).view(*euler_angles.shape[:-1], 3, 3)
+
+    # Combine the rotations to form the final rotation matrices
+    rotation_matrices = torch.matmul(rotation_z, torch.matmul(rotation_y, rotation_x))
+
+    return rotation_matrices
 
 
-def euler_from_quaternion(q):
-    # Extract quaternion components
-    w, x, y, z = q
+def quaternion_to_euler(quaternions):
+    """
+    Convert a tensor of quaternions to a tensor of Euler angles in radians.
 
-    # Calculate Euler angles
-    # Roll (rotation around x-axis)
-    sinr_cosp = 2 * (w * x + y * z)
-    cosr_cosp = 1 - 2 * (x * x + y * y)
-    roll = math.atan2(sinr_cosp, cosr_cosp)
+    Args:
+        quaternions (torch.Tensor): Tensor of quaternions with shape (..., 4).
 
-    # Pitch (rotation around y-axis)
-    sinp = 2 * (w * y - z * x)
-    if abs(sinp) >= 1:
-        pitch = math.copysign(math.pi / 2, sinp)  # Use 90 degrees if out of range
-    else:
-        pitch = math.asin(sinp)
+    Returns:
+        torch.Tensor: Tensor of Euler angles in radians with shape (..., 3).
+    """
+    qw, qx, qy, qz = torch.unbind(quaternions, dim=-1)
 
-    # Yaw (rotation around z-axis)
-    siny_cosp = 2 * (w * z + x * y)
-    cosy_cosp = 1 - 2 * (y * y + z * z)
-    yaw = math.atan2(siny_cosp, cosy_cosp)
+    # Conversion to Euler angles
+    roll = torch.atan2(2 * (qw * qx + qy * qz), 1 - 2 * (qx**2 + qy**2))
+    pitch = torch.asin(2 * (qw * qy - qz * qx))
+    yaw = torch.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy**2 + qz**2))
 
-    # Return Euler radian angles as a vector
-    return [roll, pitch, yaw]
+    return torch.stack((roll, pitch, yaw), dim=-1)
 
 
 def quaternion_from_euler(euler):
