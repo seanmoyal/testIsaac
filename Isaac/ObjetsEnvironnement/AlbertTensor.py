@@ -10,7 +10,7 @@ from scipy.spatial.transform import Rotation
 # Classe de l'Acteur : Albert
 class AlbertCube(Cube):
 
-    def __init__(self,sim, room_manager,num_bodies,gym,env,num_envs,state_tensor):
+    def __init__(self,sim, room_manager,num_bodies,gym,env,num_envs,state_tensor,handle_albert_tensor):
         # super().__init__(hExtents=[0.25,0.25,0.25])
         self.actual_room = 0                   # niveau actuel d'entrainement dans la liste du room manager
         self.room_manager = room_manager       # classe contenant la liste de tous les niveaux d'entraînement possibles
@@ -24,7 +24,7 @@ class AlbertCube(Cube):
         self.sim=sim
         self.env=env
         self.num_envs=num_envs
-
+        self.handle_albert_tensor=handle_albert_tensor
         # espace d'état ( albert n'y a pas "acces")
         self.memory_state = []                        # stockage des 5 derniers états
         self.current_state = self.get_current_state(self.state_tensor) #état courant de la simulation
@@ -34,11 +34,10 @@ class AlbertCube(Cube):
         self.memory_observation = []  # stockage des 5 dernieres observations
 
         # Attributs nécessaires aux mouvements d'albert
-        self.count = 0  # pour le saut
-        self.x_factor = 0  # pour le saut
-        self.still_jumping = False  # pour le saut
-        self.jumping = False  # pour le saut
-        self.ori_jump = 0  # pour le saut
+
+        self.x_factor = torch.zeros((self.num_envs,))  # pour le saut
+        self.jumping = torch.full((self.num_envs,),False)  # pour le saut
+
 
     def has_fallen(self): # retourne True si Albert est tombé du niveau
         pos = self.state_tensor[self.id][:3]
@@ -105,30 +104,28 @@ class AlbertCube(Cube):
 
     def jump_zer(self,jump, move):
         i = 13000  # force du jump sur un pas
-        move_x = 0
-        if move == 1:
-            move_x = -1
-        elif move == 2:
-            move_x = 1
-        if jump == 1:
-            if self.in_contact_with_floor_or_button():
-                self.jumping = True
-        if self.jumping:
-            #application d'une impulsion pour un saut dans le cas où albert est sur le sol ou un boutton
-            self.x_factor = move_x
-            self.oriJump = euler_from_quaternion(self.state_tensor[self.id])[2]
-            impulse = np.concatenate((np.array([5 * self.x_factor, 0, i]), np.array([0, 0, 0])))
-            self.gym.apply_body_forces(env=self.env,rigidHandle=self.handle,force=impulse,torque=None,space=gymapi.CoordinateSpace.LOCAL_SPACE)
-            self.jumping = False
+        minus_ones_tensor = torch.full((self.num_envs,),-1)
+        ones_tensor = torch.full((self.num_envs,), 1)
+        zero_tensor = torch.zeros((self.num_envs,))
+        move_x = torch.where(move==zero_tensor,zero_tensor,torch.where(ones_tensor==move,minus_ones_tensor,ones_tensor))
 
-    def yaw_turn(self,rotate): # fonction de rotation d'albert
-        move_z = 0
-        if rotate == 1:
-            move_z = -1
-        elif rotate == 2:
-            move_z = 1
-        angular_force = [0, 0, 10 * move_z]  # mz=1/0/-1
-        self.gym.apply_body_forces(env=self.env,rigidHandle=self.handle,force=None,torque=angular_force,space=gymapi.CoordinateSpace.LOCAL_SPACE)
+        self.jumping = torch.where(jump==ones_tensor & self.in_contact_with_floor_or_button(),torch.full((self.num_envs,),True),self.jumping)
+
+        self.x_factor = move_x
+        ori_tensor = torch.tensor([self.state_tensor[self.id_array[i]][3:7] for i in range(self.num_envs)])
+        self.oriJump = quaternion_to_euler(ori_tensor)############## pour l'instant osef mais enft on ca peut etre l'utiliser pour direct changer de referentiel dans la force
+        stack1=torch.stack((torch.zeros(1,self.num_envs),jump*i*self.in_contact_with_floor_or_button()),dim=0)######## changer in_contact_with_floor
+        impulse = torch.stack((move_x*500,stack1),dim=1)
+        self.gym.apply_rigid_body_force_tensors(self.sim, forceTensor=impulse, posTensor=self.get_pos_tensor(),space=gymapi.CoordinateSpace.LOCAL_SPACE)
+
+    def yaw_turn(self,rotate): # fonction de rotation d'albert ############### pas le choix, je suis passé par un "in range"############# FINI #########################
+        minus_ones_tensor = torch.full((self.num_envs,),-1)
+        ones_tensor = torch.full((self.num_envs,), 1)
+        zero_tensor = torch.zeros((self.num_envs,))
+        move_z = torch.where(rotate==zero_tensor,zero_tensor,torch.where(ones_tensor==rotate,minus_ones_tensor,ones_tensor))
+        angular_force = torch.stack((torch.zeros((2,self.num_envs)),move_z*10),dim=1)
+        for i in range(self.num_envs):
+            self.gym.apply_body_forces(env=self.env,rigidHandle=self.handle_albert_tensor[i],force=None,torque=angular_force[i],space=gymapi.CoordinateSpace.LOCAL_SPACE)
 
 
     def move(self, move):############################## FINI ###########################
@@ -136,8 +133,8 @@ class AlbertCube(Cube):
         ones_tensor = torch.full((self.num_envs,), 1)
         zero_tensor = torch.zeros((self.num_envs,))
         move_x = torch.where(move==zero_tensor,zero_tensor,torch.where(ones_tensor==move,minus_ones_tensor,ones_tensor))
-        torch.stack((move_x*500,torch.zeros((2,self.num_envs))),dim=1)
-        linear_velocity = [move_x * 500, 0, 0]
+
+        linear_velocity = torch.stack((move_x*500,torch.zeros((2,self.num_envs))),dim=1)
         ori_tensor = torch.tensor([self.state_tensor[self.id_array[i]][3:7] for i in range(self.num_envs)])
         euler = quaternion_to_euler(ori_tensor)
         mat = euler_to_rotation_matrix(euler)
