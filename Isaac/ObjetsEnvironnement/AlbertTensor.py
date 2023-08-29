@@ -102,7 +102,7 @@ class AlbertCube(Cube):
 
         return obs
 
-    def jump_zer(self,jump, move):
+    def jump_zer(self,jump, move):############################ FINI ##################################
         i = 13000  # force du jump sur un pas
         minus_ones_tensor = torch.full((self.num_envs,),-1)
         ones_tensor = torch.full((self.num_envs,), 1)
@@ -147,16 +147,15 @@ class AlbertCube(Cube):
         impulse = linear_velocity
         self.gym.apply_rigid_body_force_tensors(self.sim,forceTensor = impulse,posTensor=self.get_pos_tensor(),space=gymapi.CoordinateSpace.LOCAL_SPACE)
 
-    def take_action(self, action):  # 1: rotate, 2 : move, 3 : jump # fonction de traitement de l'action à effectuer
+    def take_action(self, action):  # 1: rotate, 2 : move, 3 : jump #################### FINI #########################
         action_reshaped = action.reshape((self.num_envs,3))
         rotate = action_reshaped[:,0]
         move = action_reshaped[:,1]
         jump = action_reshaped[:,2]
         self.yaw_turn(rotate)
-        if 2 in self.current_state["contactPoints"]:
-            self.move(move)
-            self.jump_zer(jump, move)
-        self.current_state = self.get_current_state()
+        self.move(move)
+        self.jump_zer(jump, move)
+        self.current_state = self.get_current_state()########## PAS SUR ? ##################
 
     def get_id(self):
         return self.id
@@ -178,7 +177,16 @@ class AlbertCube(Cube):
         observation = self.flat_memory()
         return observation
 
-    def check_type(self, id_tensor, room_tensor): # retourne à quel type d'objet l'id fait référence
+    def check_type(self,id_tensor,room_tensor): ################### FINI ############################
+        type_array=[]
+        for i in range(self.num_envs):
+            type_sub_array = []
+            for j in range(id_tensor[i].numel()):
+                type_sub_array.append(self.check_type_(id_tensor[i][j],room_tensor[i]))
+            type_array.append(type_sub_array)
+        type_tensor=torch.tensor(type_array)
+        return type_tensor
+    def check_type_(self, id, room): # retourne à quel type d'objet l'id fait référence ####################### FINI ######################
         buttons = room.buttons_array.keys()
         if id in buttons:
             return 1
