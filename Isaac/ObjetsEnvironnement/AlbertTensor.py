@@ -156,7 +156,7 @@ class AlbertCube(Cube):
         self.jump_zer(jump, move)
         self.current_state = self.get_current_state()  ########## PAS SUR ? ##################
 
-    def get_observation(self):
+    def get_observation(self): ######################## FINI ########################
         contact_results = self.raycasting()
 
         condition = (contact_results[:, :, 0] == 0) | (contact_results[:, :, 0] == -1)
@@ -182,7 +182,7 @@ class AlbertCube(Cube):
         return type_tensor
 
     def check_type_(self, id,
-                    room):  # retourne à quel type d'objet l'id fait référence ####################### FINI ######################
+                    room):  # retourne à quel type d'objet l'id fait référence ####################### FINI ###################### PAS SUR ENFAIT
         buttons = room.buttons_array.keys()
         if id in buttons:
             return 1
@@ -234,19 +234,19 @@ class AlbertCube(Cube):
         return previous_state_tensor
 
     def get_current_state(self):  # fonction actualisant l'état courant du système et retournant les 5 derniers états
-        room = self.room_manager.room_array[self.actual_room]
+        room_tensor = self.room_manager.room_array[self.actual_room] ####### CHANGER EN ROOM TENSOR
         current_state = {}
-        pos_albert = self.state_tensor[self.id][:3]
-        buttons = room.buttons_array.values()
-        buttons = binarize(buttons)
-        door = np.prod(buttons)
-        door_pos = self.state_tensor[room.door_array[0]][:3]
+        pos_albert = self.get_pos_tensor()
+        buttons_tensor = room_tensor.buttons_array.values() ######################## A VOIR DANS LES MODIFS DE ROOM / A VOIR DANS CHECK TYPE
+        buttons_tensor = binarize(buttons_tensor)
+        door_tensor = np.prod(buttons_tensor,dim=1)
+        door_pos_tensor = self.state_tensor[room.door_array[0]][:3] ##################### ON VERRA COMMENT CHANGER CETTE LIGNE
 
-        current_state["CharacterPosition"] = [pos_albert[0], pos_albert[1], pos_albert[2]]
-        current_state["doorState"] = door
-        current_state["doorPosition"] = [door_pos[0], door_pos[1]]
+        current_state["CharacterPosition"] = torch.stack(pos_albert[:,0], pos_albert[:,1], pos_albert[:,2])
+        current_state["doorState"] = door_tensor
+        current_state["doorPosition"] = [door_pos_tensor[:,0], door_pos_tensor[:,1]]
 
-        current_state["buttonsState"] = [buttons[i] for i in range(len(buttons))]
+        current_state["buttonsState"] = buttons_tensor
 
         # add contactpoints
         contact_points = self.get_contact_points()
@@ -333,14 +333,17 @@ class AlbertCube(Cube):
         return quats
 
 
-def binarize(buttons):  # retourne une liste d'états des bouttons ( 1 si le boutton à été appuyé dessus, 0 sinon )
-    list = []
-    for button in buttons:
-        if button.is_pressed:
-            list.append(1)
-        else:
-            list.append(0)
-    return list
+def binarize(buttons_tensor):  # retourne une liste d'états des bouttons ( 1 si le boutton à été appuyé dessus, 0 sinon ) ################################ FINI ######################
+    tensor=([])
+    for button_array in buttons_tensor:
+        check_tensor = torch.tensor([])
+        for button in button_array:
+            if button.is_pressed:
+                check_tensor=torch.cat(check_tensor,torch.tensor([1]))
+            else:
+                check_tensor=torch.cat(check_tensor,torch.tensor([0]))
+        tensor=torch.cat(tensor,check_tensor)
+    return tensor
 
 
 def euler_to_rotation_matrix(euler_angles):
