@@ -43,13 +43,6 @@ class AlbertCube(Cube):
         pos = self.state_tensor[self.id][:3]
         return pos[2] < self.room_manager.room_array[self.actual_room].global_coord[2]
 
-    def add_time(self, step): #incrémente le temps passé dans la simulation
-        self.time += step
-
-    def has_time(self): # si time>=4 (25 secs il me semble en réel ), reset la simulation
-        if self.time >= 4:
-            self.room_manager.room_array[self.actual_room].reset_room(self)
-
     def reset_time(self): # reset le temps
         self.time = 0
 
