@@ -14,7 +14,7 @@ class AlbertCube(Cube):
 
     def __init__(self, sim, room_manager, num_bodies, gym, env, num_envs, state_tensor, handle_albert_tensor):
         # super().__init__(hExtents=[0.25,0.25,0.25])
-        self.actual_room = 0  # niveau actuel d'entrainement dans la liste du room manager
+        self.actual_room = torch.zeros((self.num_envs,))  # niveau actuel d'entrainement dans la liste du room manager
         self.room_manager = room_manager  # classe contenant la liste de tous les niveaux d'entraînement possibles
         self.num_bodies = num_bodies
         self.id_array = torch.tensor([i * num_bodies for i in range(num_envs)])
@@ -238,10 +238,10 @@ class AlbertCube(Cube):
         room_tensor = self.room_manager.room_array[self.actual_room] ####### CHANGER EN ROOM TENSOR
         current_state = {}
         pos_albert = self.get_pos_tensor()
-        buttons_tensor = room_tensor.buttons_array.values() ######################## A VOIR DANS LES MODIFS DE ROOM / A VOIR DANS CHECK TYPE
+        _,buttons_tensor = room_tensor.get_id_values_button_from_button_array() ######################## A VOIR DANS LES MODIFS DE ROOM / A VOIR DANS CHECK TYPE
         buttons_tensor = binarize(buttons_tensor)
         door_tensor = np.prod(buttons_tensor,dim=1)
-        door_pos_tensor = self.state_tensor[room.door_array[0]][:3] ##################### ON VERRA COMMENT CHANGER CETTE LIGNE
+        door_pos_tensor = self.state_tensor[room.door_array_tensor[:,0]][:3] ##################### ON VERRA COMMENT CHANGER CETTE LIGNE
 
         current_state["CharacterPosition"] = pos_albert
         current_state["doorState"] = door_tensor
