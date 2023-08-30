@@ -36,8 +36,8 @@ class Room:  # classe d'une chambre ( niveau )
                     if i == 0 or (j == 0 or j == 10):
                         if i == self.depth / 2 and (j == self.width - 1 or j == 0) and (z == 0):
                             if j == self.width - 1:
-                                self.door_array[:,0]=torch.tensor([id+self.num_bodies*env_id for env_id in range(self.num_envs)])
-                                self.door_array[:,1]=Door(torch.tensor([id+self.num_bodies*env_id for env_id in range(self.num_envs)]))
+                                self.door_array_tensor[0]=torch.tensor([id+self.num_bodies*env_id for env_id in range(self.num_envs)])
+                                self.door_array_tensor[1]=Door(torch.tensor([id+self.num_bodies*env_id for env_id in range(self.num_envs)]))
                                 id+=1
                         else:
                             torch.cat((self.wall_array_tensor,[[id+self.num_bodies*env_id] for env_id in range(self.num_envs)]),dim=1)
@@ -45,8 +45,8 @@ class Room:  # classe d'une chambre ( niveau )
 
         button_id_tensor = torch.tensor([id+self.num_bodies*env_id for env_id in (self.num_envs)])
         button_values = Button(button_id_tensor)
-        for d, key, value in zip(self.buttons_array_tensor, button_id_tensor, button_values):
-            d[key] = value
+        self.buttons_array_tensor.cat(torch.tensor([button_id_tensor,button_values]))
+
 
 
     def init_room(self, model, name='room1'): ################################ CHANGE TO ISAAC ####################################
@@ -71,13 +71,13 @@ class Room:  # classe d'une chambre ( niveau )
             id += 1
 
     def check_buttons_pushed(self, state_tensor):
-        if not self.door_array[1].is_opened:
-            a = False
-            for button in self.buttons_array.values():
-                if not button.is_pressed:
-                    a = True
-            if not a:
-                self.door_array[1].open(state_tensor)
+        open_door_tensor = self.door_array_tensor[1].is_opened
+        buttons_all_pressed=torch.full((self.buttons_array_tensor.shape[0],),True)
+        for button_tensor in self.buttons_array_tensor:
+            buttons_all_pressed = buttons_all_pressed & button_tensor.is_pressed
+
+        all_buttons_pressed_but_door_closed = (buttons_all_pressed ^ open_door_tensor) & ~(open_door_tensor)
+        self.door_array_tensor[1].open(state_tensor,all_buttons_pressed_but_door_closed)
 
     def reset_room(self,state_tensor,character):  # dans la vidéo chaque simu se termine après 10s, on appelera cette fo après 10 s de simu
         # Evidemment elle est à compléter

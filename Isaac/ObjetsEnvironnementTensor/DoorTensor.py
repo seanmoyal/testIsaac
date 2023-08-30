@@ -5,14 +5,14 @@ class Door(Cube):
         self.is_opened=torch.full((id_tensor.numel(),),False)
         self.id_tensor=id_tensor
 
-    def open(self,state_tensor):###################### A CHANGER SELON LA MANIERE DE TRAITER CA
-        self.is_opened=True
-        pos = state_tensor[self.id][:3]
-        new_pos=[pos[0],pos[1],pos[2]+1]
-        state_tensor[self.id][:3] = new_pos
+    def open(self,state_tensor,doors_to_open_tensor):###################### FINI #########################
+        self.is_opened=torch.where(doors_to_open_tensor,True,self.is_opened)
+        pos = state_tensor[self.id_tensor][:3]
+        new_pos= pos+torch.tensor([0,0,1])
+        state_tensor[self.id_tensor][:3] = torch.where(doors_to_open_tensor,new_pos,pos)
 
-    def close(self,state_tensor):################ pareil
-        self.is_opened=False
-        pos = state_tensor[self.id][:3]
-        new_pos=[pos[0],pos[1],pos[2]-1]
-        state_tensor[self.id][:3]=new_pos
+    def close(self,state_tensor,doors_to_close):################ FINI #############################
+        self.is_opened=torch.where(doors_to_close,False,self.is_opened)
+        pos = state_tensor[self.id_tensor][:3]
+        new_pos= pos+torch.tensor([0,0,-1])
+        state_tensor[self.id_tensor][:3] = torch.where(doors_to_close,new_pos,pos)
