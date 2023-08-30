@@ -1,6 +1,7 @@
 import math
 import gymapi
 import torch
+import torch.nn.functional as F
 import keyboard
 import numpy as np
 from Isaac.ObjetsEnvironnement.Cube import Cube
@@ -233,7 +234,7 @@ class AlbertCube(Cube):
         previous_state_tensor = torch.where(condition_tensor,torch.full(self.num_envs,None),self.memory_state[:,-2])
         return previous_state_tensor
 
-    def get_current_state(self):  # fonction actualisant l'état courant du système et retournant les 5 derniers états
+    def get_current_state(self):  # fonction actualisant l'état courant du système et retournant les 5 derniers états ################## MOYEN FINI ########################
         room_tensor = self.room_manager.room_array[self.actual_room] ####### CHANGER EN ROOM TENSOR
         current_state = {}
         pos_albert = self.get_pos_tensor()
@@ -242,41 +243,32 @@ class AlbertCube(Cube):
         door_tensor = np.prod(buttons_tensor,dim=1)
         door_pos_tensor = self.state_tensor[room.door_array[0]][:3] ##################### ON VERRA COMMENT CHANGER CETTE LIGNE
 
-        current_state["CharacterPosition"] = torch.stack(pos_albert[:,0], pos_albert[:,1], pos_albert[:,2])
+        current_state["CharacterPosition"] = pos_albert
         current_state["doorState"] = door_tensor
-        current_state["doorPosition"] = [door_pos_tensor[:,0], door_pos_tensor[:,1]]
+        current_state["doorPosition"] = door_pos_tensor[:,0:2]
 
         current_state["buttonsState"] = buttons_tensor
 
         # add contactpoints
         contact_points = self.get_contact_points()
+        type_checked_tensor=self.check_type(id_tensor=contact_points,room_tensor=room_tensor)############# Regler le pb de room
+        button_detected_tensor = (type_checked_tensor==1).nonzero()
+        impacted_rooms = room_tensor[button_detected_tensor[:,0]]
+        impacted_rooms.check_buttons_by_id(current_state[button_detected_tensor]) # FAIRE LA FONCTION#########################################################
+        unique_type_tensor = torch.unique(type_checked_tensor,dim=-1)
 
-        if len(contact_points) == 0:
-            current_state["contactPoints"] = [0, 0, 0, 0, 0, 0]
-        else:
-            contact_types = []
-            ids = []
-            for i in range(len(contact_points)):
-                id = contact_points[i][0]
+        max_row_size = 6
+        zeros_to_pad = max_row_size - unique_type_tensor.size(1)
 
-                type = self.check_type(id, self.room_manager.room_array[
-                    self.actual_room])
-                if id not in ids:
-                    contact_types.append(type)
-                    ids.append(id)
-                if type == 1:
-                    pushed_button = self.room_manager.room_array[0].buttons_array.get(id)
-                    if (pushed_button.is_pressed == False):
-                        pushed_button.got_pressed(self.state_tensor)
-            while (len(contact_types) < 6):
-                contact_types.append(0)
-            current_state["contactPoints"] = contact_types
+        padded_tensor = F.pad(unique_type_tensor,(0,zeros_to_pad))
+        current_state["contactPoints"] = padded_tensor
 
-        self.room_manager.room_array[self.actual_room].check_buttons_pushed(self.state_tensor)
+        room_tensor.check_buttons_pushed(self.state_tensor) #################### S ASSURER DE LA FONCTION
 
         self.add_to_memory_state(current_state)
 
         return current_state
+
 
     def flat_memory(self):  # met l'observation dans le bon format nécessaire à l'entrainement ############################### FINI ####################################
         obs = torch.reshape(self.memory_state,(self.num_envs,210))###################### A VERIF SI LA RESHAPE EST BONNE ###############################
@@ -286,14 +278,6 @@ class AlbertCube(Cube):
             new_obs[:,105+ i * 21:i + 1 * 21] = obs[:,(2 * i+1) * 21: (2 * i + 2) * 21]
         return new_obs
 
-
-        for i in range(len(self.memory_observation)):
-            for j in range(42):
-                if j < 21:
-                    obs[i * 21 + j] = self.memory_observation[i][j]
-                else:
-                    obs[105 + i * 21 + (j - 21)] = self.memory_observation[i][j]
-        return obs
 
     def get_contact_points(
             self):  # retourne les identifiants des objets en contact avec albert ################################ CHANGE TO ISAAC ####################################
