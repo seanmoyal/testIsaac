@@ -295,12 +295,11 @@ class AlbertCube(Cube):
                     contact_points.append(body_id)
         return contact_points
 
-    def in_contact_with_floor_or_button(self):  # retourne true si albert est en contact avec le sol ou un boutton
+    def in_contact_with_floor_or_button(self):  # retourne true si albert est en contact avec le sol ou un boutton ########## FINI ##################s
         contact_points_tensor = self.get_contact_points()  ############### Cette fonction est aussi à changer
         types_checked_tensor = self.check_type(contact_points_tensor)
 
-        bool_result = torch.tensor(
-            [(types_checked_tensor[i] == 1).any() | (types_checked_tensor[i] == 2).any() for i in range(self.num_envs)])
+        bool_result = torch.tensor((types_checked_tensor == 1) | (types_checked_tensor == 2)).any(dim=1)
         return bool_result
 
     def get_pos_tensor(self):
@@ -311,7 +310,7 @@ class AlbertCube(Cube):
         quats = self.state_tensor[self.id_array][3:7]
         return quats
 
-    def push_buttons_in_contact(self,contact_points):
+    def push_buttons_in_contact(self,contact_points):################# FINI #####################
         # on va considérer que albert ne peut qu'appuyer sur un boutton à la fois ( ils sont assez espacés )
         room_tensor = self.room_manager.room_array[self.actual_room]
         type_checked_tensor = self.check_type(id_tensor=contact_points)
