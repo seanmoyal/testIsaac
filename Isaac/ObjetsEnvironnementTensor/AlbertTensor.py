@@ -12,20 +12,20 @@ from scipy.spatial.transform import Rotation
 # Classe de l'Acteur : Albert
 class AlbertCube(Cube):
 
-    def __init__(self, sim, room_manager, num_bodies, gym, env, num_envs, state_tensor, handle_albert_tensor):
+    def __init__(self, sim,gym, room_manager, num_bodies, env, state_tensor, handle_albert_tensor):
         # super().__init__(hExtents=[0.25,0.25,0.25])
         self.actual_room = 0  # niveau actuel d'entrainement dans la liste du room manager
         self.room_manager = room_manager  # classe contenant la liste de tous les niveaux d'entraînement possibles
         self.num_bodies = num_bodies
-        self.id_array = torch.tensor([i * num_bodies for i in range(num_envs)])
-        self.time = torch.zeros((num_envs,))  # temps passé dans la simu depuis sa création
+        self.id_array = torch.tensor([i * num_bodies for i in range(env.numel())])
+        self.time = torch.zeros((env.numel(),))  # temps passé dans la simu depuis sa création
 
         # Caracs of simulation
         self.state_tensor = state_tensor
         self.gym = gym
         self.sim = sim
         self.env = env
-        self.num_envs = num_envs
+        self.num_envs = env.numel()
         self.handle_albert_tensor = handle_albert_tensor
         # espace d'état ( albert n'y a pas "acces")
         self.memory_state = torch.tensor([])  # stockage des 5 derniers états
@@ -119,7 +119,7 @@ class AlbertCube(Cube):
         move_z = torch.where(rotate == 0, 0,torch.where(rotate == 1, -1, 1))
         angular_force = torch.stack((torch.zeros((2, self.num_envs)), move_z * 10), dim=1)
         for i in range(self.num_envs):
-            self.gym.apply_body_forces(env=self.env, rigidHandle=self.handle_albert_tensor[i], force=None,
+            self.gym.apply_body_forces(env=self.env[i], rigidHandle=self.handle_albert_tensor[i], force=None,
                                        torque=angular_force[i], space=gymapi.CoordinateSpace.LOCAL_SPACE)
 
     def move(self, move):  ############################## FINI ###########################

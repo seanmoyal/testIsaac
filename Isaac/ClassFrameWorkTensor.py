@@ -55,7 +55,7 @@ class AlbertEnvironment(BaseTask):
         self.actor_handles = []
 
         # instanciate Room Manager
-        self.room_manager_array = np.array([RoomManager() for _ in range(self.num_envs)])
+        self.room_manager = RoomManager()
         self.albert_array = np.empty((self.num_envs,))
 
         # create and populate the environments
@@ -66,8 +66,7 @@ class AlbertEnvironment(BaseTask):
             pose_albert = gymapi.Transform()
             pose_albert.p = gymapi.Vec3(2.0, 3.0, 1.5)  # pose.r pour l'orientation
             # la position est relative
-            actor_handle_albert = self.gym.create_actor(env, asset_albert, pose_albert, "Albert", i,
-                                                        1)  # creation  d'un acteur à partir d'un asset
+            actor_handle_albert = self.gym.create_actor(env, asset_albert, pose_albert, "Albert", i,1)  # creation  d'un acteur à partir d'un asset
 
             self.actor_handles.append(actor_handle_albert)
 
@@ -100,11 +99,11 @@ class AlbertEnvironment(BaseTask):
         _root_tensor = self.gym.acquire_actor_root_state_tensor(self.sim)
         self.root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
-        for i in range(self.num_envs):  # on va mettre ici la création des objets
-            self.albert_array[i] = AlbertCube(self.room_manager_array[i], i, 0, self.num_bodies)
-            self.room_manager_array[i].add_room(Room(i,self.num_bodies))
+        ############################### Creation des objets tensuers albert et room #########################################
+        self.albert_tensor = AlbertCube(self.sim,self.gym,self.room_manager,self.num_bodies,env_tensor,self.root_tensor,handles_albert)
+        self.room_manager.add_room(Room(self.num_bodies,self.num_envs))
 
-        self.time_passed = [0 for i in range(self.num_envs)]
+        self.time_passed = torch.zeros((self.num_envs,))
         self.time_episode = 10
         self.step = 0.01  # dt
         self.num_bodies = 60 # CHANGER CETTE VALEUR ########################### CHANGER ##############################
@@ -148,98 +147,74 @@ class AlbertEnvironment(BaseTask):
     def pre_physics_step(self, actions):
         # apply actions
         self.actions=actions # JE PEUX FAIRE CA ??? ############################ ISAAC ######################################
-        for i in range(self.num_envs):
-            self.albert_array[i].take_action(actions[3*i:3*(i+1)])
+        self.albert_tensor.take_action(actions)
 
 
     def post_physics_step(self):#
         # compute observations,rewards,and resets
         self.compute_observations()
-        self.compute_rewards()
+        self.compute_reward()
 
-        # trouver les ids à reset
-        env_ids = []
-        for id in range(self.num_envs):
-            if (self.time_passed[id] >= self.time_episode or self.albert_array[id].has_fallen() or self.achieved_maze(id)):
-                env_ids.append(id)
-                self.time_passed[id] += self.step
-        self.reset(env_ids)
+        reset_tensor = ( self.time_passed >= self.time_episode ) | ( self.albert_tensor.has_fallen() ) | ( self.achieved_maze() )
 
-    def reset(self, env_ids):
-        # number of environments to reset
-        num_resets = len(env_ids)
-        for id in env_ids:
-            room = self.room_manager_array[id].room_array[self.albert_array[id].actual_room]
-            room.reset_room(self.root_tensor, self.albert_array[id])
+        self.time_passed += self.step
 
-            # generate random DOF positions and velocities
-            pos = [np.random.uniform(1, 3),np.random.uniform(1, 5),0.75]
+        self.reset(reset_tensor)
 
-            ori_euler = [0,0,np.random.uniform(-np.pi, np.pi)]#ecrire le bon truc puis le mettre en quat ################################## CHANGE TO ISAAC #####################################
-            ori = quat_from_euler(ori_euler)
-            # rewrite root tensor
-            self.root_tensor[id*self.num_bodies, :3] = pos
-            self.root_tensor[id*self.num_bodies, 3:7] = ori
+    def reset(self, reset_tensor):
+
+        room_tensor=self.room_manager.room_array[self.albert_tensor.actual_room]
+        room_tensor.reset_room(self.root_tensor,self.albert_tensor,reset_tensor)
+        ################################ REVOIR CES 2 LIGNES AU CAS OU ###########################################
+        pos = torch.full((self.num_envs,),[torch.random.uniform(low=1,high=3),torch.random.uniform(low=1,high=5),0.75])
+        ori = torch.full((self.num_envs,),[0,0,torch.random.uniform(low=-torch.pi, high=torch.pi)])
+
+        self.root_tensor[self.albert_tensor.id_array][:3]=torch.where(reset_tensor,pos,self.root_tensor[self.albert_tensor.id_array][:3])
+        self.root_tensor[self.albert_tensor.id_array][:3] = torch.where(reset_tensor, ori,self.root_tensor[self.albert_tensor.id_array][3:7])
+
 
         self.refresh_actor_root_state_tensor(self.sim)
-
         self.compute_observations()
-        for id in env_ids:
-            self.time_passed[id] = 0
+        self.time_passed[reset_tensor]=0
 
-    def compute_observations(self):
+
+    def compute_observations(self):##################### FINI ##############################
         # refresh state tensor
         self.refresh_actor_root_state_tensor(self.sim)
 
-        # ca c'est cartpole, ou changer obs_buf de dimensions ? jsp mais à trouver
-        #self.obs_buf[:, 0] = self.dof_pos[:, 0]
-        #self.obs_buf[:, 1] = self.dof_vel[:, 0]
-        #self.obs_buf[:, 2] = self.dof_pos[:, 1]
-        #self.obs_buf[:, 3] = self.dof_vel[:, 1]
-
-        for i in range(self.num_envs):
-            self.obs_buf[i]=self.albert_array[i].get_observation()
+        self.obs_buf = self.albert_tensor.get_observation()
 
         self.update_state()
 
-    def compute_rewards(self):
-        # a revoir c'est casse couille : vidéo : à 47 min
-        for i in range(self.num_envs):
-            self.rew_buf[i]=self.compute_reward(i)
 
-    def compute_reward(self,i):
-        reward = 0
+    def compute_reward(self):
+        reward = torch.zeros((self.num_envs,))
         contact = self.curr_state["contactPoints"] # regarder comment modifier la space du State courant
-        if self.actions[3*i:3*(i+1)][2] == 1: # regarder comment passer action
-            reward -= 0.05
-        if (3 in contact or 4 in contact or 5 in contact):
-            reward -= 0.1
-        if (self.achieved_maze(i)):
-            reward += 1
-        if (self.button_distance(i) != 0):
-            reward += 1
-        if self.curr_state["CharacterPosition"][2] <= self.room_manager.room_array[0].global_coord[
-            2]:  # a changer pr que ce soit qu'une fois ( quand il tombe )
-            reward -= 0.5
-        # compute done
+        reward = torch.where(self.actions[:,2]==1,reward-0.05,reward) # si il saute
+        reward = torch.where(2 4 5 dans contact, reward - 0.1, reward)  # si contact avec des obstacles
+        reward = torch.where(self.achieved_maze(), reward + 1, reward)  #
+        reward = torch.where(self.button_distance() != 0, reward +=1, reward)  #MODIFIER LA FONCITON BUTTONDISTANCE
+        reward = torch.where(self.albert_tensor.has_fallen(), reward - 0.05, reward)  # si il saute
+
         return reward
 
 
-    def button_distance(self,i):# tout est à modifier ############################## CHANGE TO ISAAC #########################
-        n = len(self.current_state[i]["buttonsState"])
-        if self.prev_state[i] == None:
-            return 0
+    def button_distance(self):# tout est à modifier ############################## CHANGE TO ISAAC #########################
+        n = len(self.current_state["buttonsState"])
+        if self.prev_state == None:
+            return 0 ############## CA MARCHE PLUS DONC FAUT CHANGER
 
         d = sum([np.abs(self.curr_state["buttonsState"][i][j] - self.prev_state["buttonsState"][i][j]) for j in range(n)])
         return d
 
 
-    def achieved_maze(self,i):
-        door_id = self.room_manager_array[i].room_array[self.albert_array[i].actual_room]
+    def achieved_maze(self):
+        door_id_tensor = self.room_manager.room_array[self.albert_tensor.actual_room].door_array_tensor.id_tensor
 
-        character_pos = self.root_tensor[i*self.num_bodies]
-        door_pos = self.root_tensor[i*self.num_bodies + door_id]
-        dist = np.sqrt(sum([(character_pos[i] - door_pos[i]) ** (2) for i in range(2)]))
+        character_pos = self.albert_tensor.get_pos_tensor()[:2]# on veut que les pos x et y donc pas besoin de prendre z
+        door_pos = self.root_tensor[door_id_tensor][:2]
+        dist = torch.sum((character_pos-door_pos)**2,axis=1) ################# REVOIR CETTE LIGNE AVEC CHATGPT POUR ETRE SUR QUE C EST LES BONNES OPERATIONS
+
         return (dist < 0.5)  # pour l'instant 0.5 mais en vrai dépend de la dim de la sortie et du character
 
     def prepare_assets(self):
