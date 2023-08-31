@@ -47,8 +47,8 @@ class AlbertCube(Cube):
 
         return has_fallen_tensor
 
-    def reset_time(self):  # reset le temps
-        self.time = 0
+    def reset_time(self,reset_tensor):  # reset le temps
+        self.time = torch.where(reset_tensor,0,self.time)
 
     def reset_pos_ori(self, pos,ori_euler):  #################################### FINI ###############################
         ori_quaternion = euler_to_quaternion(ori_euler)

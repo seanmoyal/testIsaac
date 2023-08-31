@@ -18,13 +18,12 @@ class Room:  # classe d'une chambre ( niveau )
         self.depth = 6
         self.width = 11
         self.height = 3
-        self.env_id=env_id ################ A CHANGER #############################
         self.num_bodies=num_bodies
         self.build_basic_room()
 
         # DEFINITION DU STATE :
 
-    def build_basic_room(self):  # construction de la structure de la chambre et stockage des blocs dans une liste
+    def build_basic_room(self):  # ################################# FINI ##################################
         x, y, l = 0, 0, 0
         id = 1
         for i in range(self.depth):
@@ -70,7 +69,7 @@ class Room:  # classe d'une chambre ( niveau )
                 self.fences_array.append(id)
             id += 1
 
-    def check_buttons_pushed(self, state_tensor):
+    def check_buttons_pushed(self, state_tensor):################################## FINI ############################
         open_door_tensor = self.door_array_tensor[1].is_opened
         buttons_all_pressed=torch.full((self.buttons_array_tensor.shape[0],),True)
         for button_tensor in self.buttons_array_tensor:
@@ -79,29 +78,25 @@ class Room:  # classe d'une chambre ( niveau )
         all_buttons_pressed_but_door_closed = (buttons_all_pressed ^ open_door_tensor) & ~(open_door_tensor)
         self.door_array_tensor[1].open(state_tensor,all_buttons_pressed_but_door_closed)
 
-    def reset_room(self,state_tensor,character):  # dans la vidéo chaque simu se termine après 10s, on appelera cette fo après 10 s de simu
+    def reset_room(self,state_tensor,character_tensor,rooms_to_reset):  #################################### FINI #####################################
         # Evidemment elle est à compléter
-        for id_button in self.buttons_array.keys():# j'ai viré le changement de rgb, inutile
-            state_tensor[id_button][2]= state_tensor[id_button][2] + 1.9 * 0.02 # supposing that 0.02 is the size of the button
-            # truc a changer au dessus, jsp pq mais ca reset pas à la bonne hauteur
-            # p.changeVisualShape(id_button,-1,rgbaColor=[0,1,0,1])
-            self.buttons_array[id_button].is_pressed = False
-        character.reset_time()
 
-        if self.door_array[1].is_opened:
-            self.door_array[1].close(state_tensor)
+        for button in self.buttons_array_tensor:
+            # change in button pos
+            condition = rooms_to_reset & button.is_pressed
+            buttons_to_change_pos = torch.where(condition,button.id_tensor,-1)
+            buttons_to_change_pos = torch.masked_select(buttons_to_change_pos,buttons_to_change_pos != -1)
+            state_tensor[buttons_to_change_pos][2] = state_tensor[buttons_to_change_pos][2] + 1.9*0.2
 
-    def translate(self, state_tensor, id,
-                  translation):  # fonction de translation utilisiée dans changeglobal_coord(), translate un objet d'identifiant Id
-        old_position = state_tensor[id][:3]
+            # resets to not pressed all buttons to reset
+            button.is_pressed = torch.where(rooms_to_reset,False,button.is_pressed)
 
-        new_position = [
-            old_position[0] + translation[0],
-            old_position[1] + translation[1],
-            old_position[2] + translation[2]
-        ]
+            # reset timing of character
+            character_tensor.reset_time(rooms_to_reset)
 
-        state_tensor[id][:3] = new_position
+            # closing doors
+            self.door_array_tensor[1].close(state_tensor,rooms_to_reset)
+
 
     def get_id_values_button_from_button_array(self):
         id_values_button_tensor = torch.tensor([[self.buttons_array_tensor[i].keys(),self.buttons_array_tensor[i].values()] for i in range(self.num_envs)])
