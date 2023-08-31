@@ -29,7 +29,7 @@ class AlbertCube(Cube):
         self.handle_albert_tensor = handle_albert_tensor
         # espace d'état ( albert n'y a pas "acces")
         self.memory_state = torch.tensor([])  # stockage des 5 derniers états
-        self.current_state = self.get_current_state(self.state_tensor)  # état courant de la simulation
+        self.current_state = self.get_current_state()  # état courant de la simulation
 
         # espace d'observation (albert y a accès )
         self.memory_observation = torch.tensor([])  # stockage des 5 dernieres observations
@@ -246,10 +246,13 @@ class AlbertCube(Cube):
 
         # add contactpoints
         contact_points = self.get_contact_points()
+
+        self.push_buttons_in_contact(contact_points)
+
         type_checked_tensor=self.check_type(id_tensor=contact_points)
-        button_detected_tensor = (type_checked_tensor==1).nonzero() # retrieves the indices of rooms with button contact
-        impacted_rooms = room_tensor[button_detected_tensor[:,0]] # tensor of rooms with albert touching the button
-        impacted_rooms.check_buttons_by_id(current_state[button_detected_tensor]) # FAIRE LA FONCTION#########################################################
+
+        # Try to have the second dimension of size 6
+
         unique_type_tensor = torch.unique(type_checked_tensor,dim=-1)
 
         max_row_size = 6
@@ -258,7 +261,7 @@ class AlbertCube(Cube):
         padded_tensor = F.pad(unique_type_tensor,(0,zeros_to_pad))
         current_state["contactPoints"] = padded_tensor
 
-        room_tensor.check_buttons_pushed(self.state_tensor) #################### S ASSURER DE LA FONCTION
+        room_tensor.check_buttons_pushed(self.state_tensor) # opens door if all buttons pushed
 
         self.add_to_memory_state(current_state)
 
@@ -307,6 +310,34 @@ class AlbertCube(Cube):
     def get_ori_tensor(self):
         quats = self.state_tensor[self.id_array][3:7]
         return quats
+
+    def push_buttons_in_contact(self,contact_points):
+        # on va considérer que albert ne peut qu'appuyer sur un boutton à la fois ( ils sont assez espacés )
+        room_tensor = self.room_manager.room_array[self.actual_room]
+        type_checked_tensor = self.check_type(id_tensor=contact_points)
+        bool_tensor1=type_checked_tensor == 1
+        bool_tensor2 = torch.any(bool_tensor1,axis=1)
+        button_detected_tensor = (bool_tensor1).nonzero() # retrieves the indices of rooms with button contact
+        button_detected_ids = contact_points[button_detected_tensor]
+
+        T1 = torch.zeros((self.num_envs,2))
+        T1[bool_tensor2]=button_detected_ids # tenseur de taille num_envs avec des ids au meme indice que les true
+
+        num_button = 0
+        num_button_tensor = torch.full((self.num_envs,),-1)
+        for button in room_tensor.buttons_array_tensor:
+            num_button_tensor = torch.where((button.id_tensor==button_detected_ids),num_button,num_button_tensor)
+
+            t2 = num_button_tensor==num_button # on choppe le bon indice
+            buttons_to_push = t2 & ~button.is_pressed # true si bon indice et pas encore pressé
+            button.got_pressed(self.state_tensor,buttons_to_push) # on appuie sur les bons bouttons
+
+            num_button+=1
+
+
+
+
+
 
 
 def binarize(buttons_tensor):  # retourne une liste d'états des bouttons ( 1 si le boutton à été appuyé dessus, 0 sinon ) ################################ FINI ######################
