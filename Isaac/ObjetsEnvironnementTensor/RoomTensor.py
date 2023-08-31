@@ -1,15 +1,14 @@
 from Isaac.ObjetsEnvironnement.Button import Button
 from Isaac.ObjetsEnvironnement.Door import Door
-from scipy.spatial.transform import Rotation
 import torch
 
 class Room:  # classe d'une chambre ( niveau )
-    def __init__(self,env_id,num_bodies,num_envs):
+    def __init__(self,num_bodies,num_envs):
 
         self.num_envs=num_envs
 
         self.global_coord = torch.zeros((num_envs,3))  # l=0.5 # Coordonées globales de la chambre
-        self.buttons_array_tensor = torch.tensor([{} for _ in range(num_envs)])
+        self.buttons_array_tensor = None
         self.floor_array_tensor = None
         self.wall_array_tensor = None
         self.iblocks_array_tensor = None
@@ -44,7 +43,7 @@ class Room:  # classe d'une chambre ( niveau )
 
         button_id_tensor = torch.tensor([id+self.num_bodies*env_id for env_id in (self.num_envs)])
         button_values = Button(button_id_tensor)
-        self.buttons_array_tensor.cat(torch.tensor([button_id_tensor,button_values]))
+        self.buttons_array_tensor.cat(torch.tensor([button_values]))
 
 
 
@@ -98,12 +97,9 @@ class Room:  # classe d'une chambre ( niveau )
             self.door_array_tensor[1].close(state_tensor,rooms_to_reset)
 
 
-    def get_id_values_button_from_button_array(self):
+    def get_values_button_from_button_array(self): ######################## FINI #################################
         id_values_button_tensor = torch.tensor([[self.buttons_array_tensor[i].keys(),self.buttons_array_tensor[i].values()] for i in range(self.num_envs)])
         split_tensors = torch.split(id_values_button_tensor,split_size_or_sections = 1,dim=2)
         return split_tensors[0],split_tensors[1]
 
-def quaternion_from_euler(euler):
-    eu = Rotation.from_euler('xyz', euler, degrees=False)
-    quaternion = eu.as_quat()
-    return quaternion
+

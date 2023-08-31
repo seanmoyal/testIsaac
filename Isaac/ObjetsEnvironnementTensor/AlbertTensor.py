@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import keyboard
 import numpy as np
-from Isaac.ObjetsEnvironnement.Cube import Cube
+from Isaac.ObjetsEnvironnementTensor.CubeTensor import Cube
 import mujoco as mj
 from scipy.spatial.transform import Rotation
 
@@ -14,7 +14,7 @@ class AlbertCube(Cube):
 
     def __init__(self, sim, room_manager, num_bodies, gym, env, num_envs, state_tensor, handle_albert_tensor):
         # super().__init__(hExtents=[0.25,0.25,0.25])
-        self.actual_room = torch.zeros((self.num_envs,))  # niveau actuel d'entrainement dans la liste du room manager
+        self.actual_room = 0  # niveau actuel d'entrainement dans la liste du room manager
         self.room_manager = room_manager  # classe contenant la liste de tous les niveaux d'entraînement possibles
         self.num_bodies = num_bodies
         self.id_array = torch.tensor([i * num_bodies for i in range(num_envs)])
@@ -41,13 +41,13 @@ class AlbertCube(Cube):
 
     def has_fallen(self):  # retourne True si Albert est tombé du niveau ########################### FINI #########################
         pos = self.get_pos_tensor()
-        room_tensor = self.room_tensor  ############# ligne a changer evidement apres
+        room_tensor = self.room_manager.room_array[self.actual_room]  ############# ligne a changer evidement apres
 
         has_fallen_tensor = pos[:,2]<room_tensor.global_coord[:,2]
 
         return has_fallen_tensor
 
-    def reset_time(self,reset_tensor):  # reset le temps
+    def reset_time(self,reset_tensor):  ################################## FINI #########################################
         self.time = torch.where(reset_tensor,0,self.time)
 
     def reset_pos_ori(self, pos,ori_euler):  #################################### FINI ###############################
@@ -115,11 +115,8 @@ class AlbertCube(Cube):
 
     def yaw_turn(self,
                  rotate):  # fonction de rotation d'albert ############### pas le choix, je suis passé par un "in range"############# FINI #########################
-        minus_ones_tensor = torch.full((self.num_envs,), -1)
-        ones_tensor = torch.full((self.num_envs,), 1)
-        zero_tensor = torch.zeros((self.num_envs,))
-        move_z = torch.where(rotate == zero_tensor, zero_tensor,
-                             torch.where(ones_tensor == rotate, minus_ones_tensor, ones_tensor))
+
+        move_z = torch.where(rotate == 0, 0,torch.where(rotate == 1, -1, 1))
         angular_force = torch.stack((torch.zeros((2, self.num_envs)), move_z * 10), dim=1)
         for i in range(self.num_envs):
             self.gym.apply_body_forces(env=self.env, rigidHandle=self.handle_albert_tensor[i], force=None,
@@ -129,8 +126,8 @@ class AlbertCube(Cube):
         minus_ones_tensor = torch.full((self.num_envs,), -1)
         ones_tensor = torch.full((self.num_envs,), 1)
         zero_tensor = torch.zeros((self.num_envs,))
-        move_x = torch.where(move == zero_tensor, zero_tensor,
-                             torch.where(ones_tensor == move, minus_ones_tensor, ones_tensor))
+        move_x = torch.where(move == 0, 0,
+                             torch.where(move == 1, -1, 1))
 
         linear_velocity = torch.stack((move_x * 500, torch.zeros((2, self.num_envs))), dim=1)
         ori_tensor = self.get_ori_tensor()
@@ -160,11 +157,8 @@ class AlbertCube(Cube):
     def get_observation(self): ######################## FINI ########################
         contact_results = self.raycasting()
 
-        condition = (contact_results[:, :, 0] == 0) | (contact_results[:, :, 0] == -1)
-
-        # Modify T based on the condition
-        contact_results[condition, 0] = 0  # Set T[i, j, 0] to 0 where condition is True
-        contact_results[condition, 1] = 10  # Set T[i, j, 1] to 10 where condition is True
+        # Si type 0 ou -1, type devient 0 et distance devient 10
+        contact_results = torch.where((contact_results[:, :, 0] == 0) | (contact_results[:, :, 0] == -1),[0,10],contact_results)
 
         contact_results_reshaped = torch.reshape(contact_results,(self.num_envs,42)) ##############  A VOIR SI CA DONNE LE BON AGENCEMENT########################
 
@@ -172,7 +166,8 @@ class AlbertCube(Cube):
         observation = self.flat_memory()
         return observation
 
-    def check_type(self, id_tensor, room_tensor):  ################### FINI ############################
+    def check_type(self, id_tensor):  ################### FINI ############################
+        room_tensor = self.room_manager.room_array[self.actual_room]
         type_array = []
         for i in range(self.num_envs):
             type_sub_array = []
@@ -235,13 +230,13 @@ class AlbertCube(Cube):
         return previous_state_tensor
 
     def get_current_state(self):  # fonction actualisant l'état courant du système et retournant les 5 derniers états ################## MOYEN FINI ########################
-        room_tensor = self.room_manager.room_array[self.actual_room] ####### CHANGER EN ROOM TENSOR
+        room_tensor = self.room_manager.room_array[self.actual_room]
         current_state = {}
         pos_albert = self.get_pos_tensor()
-        _,buttons_tensor = room_tensor.get_id_values_button_from_button_array() ######################## A VOIR DANS LES MODIFS DE ROOM / A VOIR DANS CHECK TYPE
+        buttons_tensor = room_tensor.buttons_array_tensor ######################## A VOIR DANS LES MODIFS DE ROOM / A VOIR DANS CHECK TYPE
         buttons_tensor = binarize(buttons_tensor)
         door_tensor = np.prod(buttons_tensor,dim=1)
-        door_pos_tensor = self.state_tensor[room.door_array_tensor[:,0]][:3] ##################### ON VERRA COMMENT CHANGER CETTE LIGNE
+        door_pos_tensor = self.state_tensor[room_tensor.door_array_tensor[0]][:3]
 
         current_state["CharacterPosition"] = pos_albert
         current_state["doorState"] = door_tensor
@@ -251,9 +246,9 @@ class AlbertCube(Cube):
 
         # add contactpoints
         contact_points = self.get_contact_points()
-        type_checked_tensor=self.check_type(id_tensor=contact_points,room_tensor=room_tensor)############# Regler le pb de room
-        button_detected_tensor = (type_checked_tensor==1).nonzero()
-        impacted_rooms = room_tensor[button_detected_tensor[:,0]]
+        type_checked_tensor=self.check_type(id_tensor=contact_points)
+        button_detected_tensor = (type_checked_tensor==1).nonzero() # retrieves the indices of rooms with button contact
+        impacted_rooms = room_tensor[button_detected_tensor[:,0]] # tensor of rooms with albert touching the button
         impacted_rooms.check_buttons_by_id(current_state[button_detected_tensor]) # FAIRE LA FONCTION#########################################################
         unique_type_tensor = torch.unique(type_checked_tensor,dim=-1)
 
@@ -279,8 +274,7 @@ class AlbertCube(Cube):
         return new_obs
 
 
-    def get_contact_points(
-            self):  # retourne les identifiants des objets en contact avec albert ################################ CHANGE TO ISAAC ####################################
+    def get_contact_points(self):  ################################ CHANGE TO ISAAC ####################################
 
         n = len(self.data.contact.geom1)
         contact_points = []
@@ -300,9 +294,7 @@ class AlbertCube(Cube):
 
     def in_contact_with_floor_or_button(self):  # retourne true si albert est en contact avec le sol ou un boutton
         contact_points_tensor = self.get_contact_points()  ############### Cette fonction est aussi à changer
-        types_checked_tensor = self.check_type(contact_points_tensor, self.room_manager.room_array[
-            self.actual_room])  # AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-        # à changer pour un tenseur d'actual room et tout
+        types_checked_tensor = self.check_type(contact_points_tensor)
 
         bool_result = torch.tensor(
             [(types_checked_tensor[i] == 1).any() | (types_checked_tensor[i] == 2).any() for i in range(self.num_envs)])
@@ -320,14 +312,9 @@ class AlbertCube(Cube):
 def binarize(buttons_tensor):  # retourne une liste d'états des bouttons ( 1 si le boutton à été appuyé dessus, 0 sinon ) ################################ FINI ######################
     tensor=([])
     for button_array in buttons_tensor:
-        check_tensor = torch.tensor([])
-        for button in button_array:
-            if button.is_pressed:
-                check_tensor=torch.cat(check_tensor,torch.tensor([1]))
-            else:
-                check_tensor=torch.cat(check_tensor,torch.tensor([0]))
-        tensor=torch.cat(tensor,check_tensor)
-    return tensor
+        tensor=torch.cat((tensor,torch.tensor([button_array.is_pushed])),dim=0)
+    zero_one_tensor = tensor.logical_not().logical_xor(torch.tensor(1))
+    return zero_one_tensor
 
 
 def euler_to_rotation_matrix(euler_angles):
