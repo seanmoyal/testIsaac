@@ -28,7 +28,7 @@ class AlbertCube(Cube):
         self.num_envs = env.numel()
         self.handle_albert_tensor = handle_albert_tensor
         # espace d'état ( albert n'y a pas "acces")
-        self.memory_state = torch.tensor([])  # stockage des 5 derniers états
+        self.memory_state = self.init_memory_state()  # stockage des 5 derniers états
         self.current_state = self.get_current_state()  # état courant de la simulation
 
         # espace d'observation (albert y a accès )
@@ -213,21 +213,15 @@ class AlbertCube(Cube):
                 self.memory_observation[index][4] = current_observation[index]
 
     def add_to_memory_state(self, current_state):  # ajout de l'état courant du système à la liste des 5 derniers états #################### FINI ########################
-        condition_tensor=self.memory_state.size(1)<5
-        for index,is_true in enumerate(condition_tensor):
-            if is_true:
-                torch.cat(self.memory_state[index],current_state[index])
-            else:
-                self.memory_state[index][0] = self.memory_state[index][1]
-                self.memory_state[index][1] = self.memory_state[index][2]
-                self.memory_state[index][2] = self.memory_state[index][3]
-                self.memory_state[index][3] = self.memory_state[index][4]
-                self.memory_state[index][4] = current_state[index]
+            self.memory_state[0] = self.memory_state[1]
+            self.memory_state[1] = self.memory_state[2]
+            self.memory_state[2] = self.memory_state[3]
+            self.memory_state[3] = self.memory_state[4]
+            self.memory_state[4] = current_state
+
 
     def get_previous_state(self):##################### FINI ############################
-        condition_tensor = self.memory_state.size(1)<=1
-        previous_state_tensor = torch.where(condition_tensor,torch.full(self.num_envs,None),self.memory_state[:,-2])
-        return previous_state_tensor
+        return self.memory_state[-2]
 
     def get_current_state(self):  # fonction actualisant l'état courant du système et retournant les 5 derniers états ################## MOYEN FINI ########################
         room_tensor = self.room_manager.room_array[self.actual_room]
@@ -266,6 +260,28 @@ class AlbertCube(Cube):
         self.add_to_memory_state(current_state)
 
         return current_state
+
+    def init_memory_state(self):
+        room_tensor = self.room_manager.room_array[self.actual_room]
+        state={}
+        state["CharacterPosition"] = torch.full((self.num_envs,3),None)
+        state["doorState"] = torch.full((self.num_envs,),None)
+        state["doorPosition"] = torch.full((self.num_envs,2),None)
+        state["buttonsState"] = torch.full(room_tensor.buttons_array_tensor.shape(),None)
+        state["contactPoints"] = torch.full((self.num_envs,6),None)
+        memory_state=torch.tensor([])
+        for _ in range(5):
+            memory_state = torch.cat(memory_state,torch.tensor([state]))
+        return memory_state
+
+    def reset_memory_state(self,reset_tensor):
+        room_tensor = self.room_manager.room_array[self.actual_room]
+        for i in range(5):
+            self.memory_state[i]["CharacterPosition"][reset_tensor]=torch.full((3,),None)
+            self.memory_state[i]["doorState"][reset_tensor]=torch.full((1,),None)
+            self.memory_state[i]["doorPosition"][reset_tensor]=torch.full((2,),None)
+            self.memory_state[i]["buttonsState"][reset_tensor]=torch.full(room_tensor.buttons_array_tensor.shape[1],None)
+            self.memory_state[i]["contactPoints"][reset_tensor]=torch.full((6,),None)
 
 
     def flat_memory(self):  # met l'observation dans le bon format nécessaire à l'entrainement ############################### FINI ####################################

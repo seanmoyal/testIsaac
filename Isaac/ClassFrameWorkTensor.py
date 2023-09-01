@@ -144,13 +144,13 @@ class AlbertEnvironment(BaseTask):
                             actor_handle_cube = self.gym.create_actor(env, asset_base_cube, pose, name, i, 1)
                             self.actor_handles.append(actor_handle_cube)
 
-    def pre_physics_step(self, actions):
+    def pre_physics_step(self, actions):######################## FINI ##############################
         # apply actions
         self.actions=actions # JE PEUX FAIRE CA ??? ############################ ISAAC ######################################
         self.albert_tensor.take_action(actions)
 
 
-    def post_physics_step(self):#
+    def post_physics_step(self):################# FINI ######################
         # compute observations,rewards,and resets
         self.compute_observations()
         self.compute_reward()
@@ -172,6 +172,7 @@ class AlbertEnvironment(BaseTask):
         self.root_tensor[self.albert_tensor.id_array][:3]=torch.where(reset_tensor,pos,self.root_tensor[self.albert_tensor.id_array][:3])
         self.root_tensor[self.albert_tensor.id_array][:3] = torch.where(reset_tensor, ori,self.root_tensor[self.albert_tensor.id_array][3:7])
 
+        self.albert_tensor.reset_memory_state(reset_tensor)
 
         self.refresh_actor_root_state_tensor(self.sim)
         self.compute_observations()
@@ -187,37 +188,35 @@ class AlbertEnvironment(BaseTask):
         self.update_state()
 
 
-    def compute_reward(self):
+    def compute_reward(self):##################### FINI #########################
         reward = torch.zeros((self.num_envs,))
         contact = self.curr_state["contactPoints"] # regarder comment modifier la space du State courant
         reward = torch.where(self.actions[:,2]==1,reward-0.05,reward) # si il saute
-        reward = torch.where(2 4 5 dans contact, reward - 0.1, reward)  # si contact avec des obstacles
+        reward = torch.where(torch.any(((contact==3) | (contact==4) | (contact==5) ),axis=1), reward - 0.1, reward)# FINIR######################S  # si contact avec des obstacles
         reward = torch.where(self.achieved_maze(), reward + 1, reward)  #
-        reward = torch.where(self.button_distance() != 0, reward +=1, reward)  #MODIFIER LA FONCITON BUTTONDISTANCE
+        reward = torch.where(self.button_distance() != 0, reward + 1, reward)  #MODIFIER LA FONCITON BUTTONDISTANCE
         reward = torch.where(self.albert_tensor.has_fallen(), reward - 0.05, reward)  # si il saute
 
         return reward
 
 
-    def button_distance(self):# tout est à modifier ############################## CHANGE TO ISAAC #########################
+    def button_distance(self):# tout est à modifier ############################## FINI #########################
         n = len(self.current_state["buttonsState"])
-        if self.prev_state == None:
-            return 0 ############## CA MARCHE PLUS DONC FAUT CHANGER
-
-        d = sum([np.abs(self.curr_state["buttonsState"][i][j] - self.prev_state["buttonsState"][i][j]) for j in range(n)])
-        return d
+        modified_prev_state = torch.where(self.prev_state["buttonsState"]==None,0,self.prev_state)
+        d_sum = torch.sum(torch.abs(self.curr_state["buttonsState"]-modified_prev_state),axis=0)
+        return d_sum
 
 
-    def achieved_maze(self):
+    def achieved_maze(self):######################## FINI ##########################
         door_id_tensor = self.room_manager.room_array[self.albert_tensor.actual_room].door_array_tensor.id_tensor
 
         character_pos = self.albert_tensor.get_pos_tensor()[:2]# on veut que les pos x et y donc pas besoin de prendre z
         door_pos = self.root_tensor[door_id_tensor][:2]
-        dist = torch.sum((character_pos-door_pos)**2,axis=1) ################# REVOIR CETTE LIGNE AVEC CHATGPT POUR ETRE SUR QUE C EST LES BONNES OPERATIONS
+        dist = torch.sum((character_pos-door_pos)**2,axis=1)
 
         return (dist < 0.5)  # pour l'instant 0.5 mais en vrai dépend de la dim de la sortie et du character
 
-    def prepare_assets(self):
+    def prepare_assets(self):############## FINI CAR RIEN A CHANGER ########################
 
         # Asset 1 : Albert :
         asset_root_albert = "../../assets"  # a changer avec le dossier MJCF
@@ -239,7 +238,7 @@ class AlbertEnvironment(BaseTask):
 
         return asset_albert, asset_room
 
-    def configure_ground(self):
+    def configure_ground(self):############## FINI CAR RIEN A CHANGER ########################
         plane_params = gymapi.PlaneParams()
         plane_params.normal = gymapi.Vec3(0, 0, 1)  # z-up!
         plane_params.distance = 0
@@ -250,7 +249,7 @@ class AlbertEnvironment(BaseTask):
         # create the ground plane
         self.gym.add_ground(self.sim, plane_params)
 
-    def set_sim_params(self):
+    def set_sim_params(self):############## FINI CAR RIEN A CHANGER ########################
         # get default set of parameters
         sim_params = gymapi.SimParams()
 
@@ -277,26 +276,16 @@ class AlbertEnvironment(BaseTask):
 
         return sim_params
 
-    def get_current_state(self):
-        current_state = []
-        for id in range(self.num_envs):
-            current_state.append(self.albert_array[id].current_state)
-
+    def get_current_state(self):#################### FINI ############################
+        current_state = self.albert_tensor.current_state
         return current_state
 
-    def get_previous_state(self):
-        prev_state = []
-        for id in range(self.num_envs):
-            prev_state.append(self.albert_array[id].get_previous_state())
-
+    def get_previous_state(self):###################### FINI ########################
+        prev_state = self.albert_tensor.get_previous_state()
         return prev_state
 
-    def update_state(self):
+    def update_state(self):############################ FINI ############################
         self.curr_state = self.get_current_state()
         self.prev_state = self.get_previous_state()
 
 
-def quat_from_euler(ori_euler):
-    eu = Rotation.from_euler('zyx', ori_euler, degrees=False)
-    quat = eu.as_quat()
-    return quat
