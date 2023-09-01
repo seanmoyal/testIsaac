@@ -12,7 +12,7 @@ from scipy.spatial.transform import Rotation
 # Classe de l'Acteur : Albert
 class AlbertCube(Cube):
 
-    def __init__(self, sim,gym, room_manager, num_bodies, env, state_tensor, handle_albert_tensor):
+    def __init__(self, sim,gym,viewer, room_manager, num_bodies, env, state_tensor, handle_albert_tensor):
         # super().__init__(hExtents=[0.25,0.25,0.25])
         self.actual_room = 0  # niveau actuel d'entrainement dans la liste du room manager
         self.room_manager = room_manager  # classe contenant la liste de tous les niveaux d'entraînement possibles
@@ -24,6 +24,7 @@ class AlbertCube(Cube):
         self.state_tensor = state_tensor
         self.gym = gym
         self.sim = sim
+        self.viewer = viewer
         self.env = env
         self.num_envs = env.numel()
         self.handle_albert_tensor = handle_albert_tensor
@@ -56,7 +57,7 @@ class AlbertCube(Cube):
         self.state_tensor[self.id_array][3:7] = ori_quaternion
 
 
-    def raycasting(self):  ################################CHANGER A ISAAC ###################################################
+    def raycasting(self):  ################################ FINI  #######################################
         cube_pos = self.get_pos_tensor()
         cube_ori = self.get_ori_tensor()
         ray_vects = grid_vision(cube_pos, cube_ori, ray_length=10)  # définit le quadrillage par les rayons
@@ -70,9 +71,11 @@ class AlbertCube(Cube):
         for n in range(21):
             contact_results[n,:,0] = self.check_type(contact_results[n,:,0])
 
+        #self.show_grid(cube_pos,ray_vects) ## UNCOMMENT THIS LINE FOR VISIBLE RAYCASTING 
+
         return contact_results
 
-    def ray_collision(self, point_of_origin_tensor, end_pos_ray):
+    def ray_collision(self, point_of_origin_tensor, end_pos_ray):################################## FINI #####################################
         room_tensor = self.room_manager.room_array[self.actual_room]
         distance = end_pos_ray - point_of_origin_tensor
         id_distance_collision_tensor = torch.full((self.num_envs,), [-1, 10])
@@ -123,6 +126,19 @@ class AlbertCube(Cube):
 
         return id_distance_collision_tensor
 
+    def show_grid(self,cube_pos,ray_vects): ################################### FINI #####################################################
+
+        for i in range(self.num_envs):
+
+            all_pos = np.array([])
+            for n in range(21):
+                all_pos = np.cat(all_pos, np.cat(cube_pos[i], ray_vects[n][i]))
+
+            rgb = np.array([1, 0, 0])
+
+            self.gym.add_lines(self.viewer, self.env[i], 21, all_pos, rgb)
+
+
     def jump_zer(self, jump, move):  ############################ FINI ##################################
         i = 13000  # force du jump sur un pas
         minus_ones_tensor = torch.full((self.num_envs,), -1)
@@ -145,6 +161,7 @@ class AlbertCube(Cube):
         impulse = torch.stack((move_x * 500, stack1), dim=1)
         self.gym.apply_rigid_body_force_tensors(self.sim, forceTensor=impulse, posTensor=self.get_pos_tensor(),
                                                 space=gymapi.CoordinateSpace.LOCAL_SPACE)
+
 
     def yaw_turn(self,
                  rotate):  # fonction de rotation d'albert ############### pas le choix, je suis passé par un "in range"############# FINI #########################
@@ -519,16 +536,6 @@ def grid_vision(character_pos, character_ori,ray_length):  # retourne la positio
     return ray_vects
 
 
-def show_grid(viewer, cube_pos,
-              ray_vects):  # affiche le raycasting de manière visible ################################### CHANGE TO ISAAC #####################################################
-    for n in range(21):
-        # if contact_results[n] != -1:
-        mj.mjv_initGeom(viewer.scn.geoms[n],
-                        mj.mjtGeom.mjGEOM_LINE, np.zeros(3),
-                        np.zeros(3), np.zeros(9), rgba=np.array([1., 0., 0., 1.], dtype=np.float32))
-        mj.mjv_makeConnector(viewer.scn.geoms[n], mj.mjtGeom.mjGEOM_LINE, width=5, a0=cube_pos[0],
-                             a1=cube_pos[1], a2=cube_pos[2], b0=ray_vects[n][0], b1=ray_vects[n][1],
-                             b2=ray_vects[n][2])
 
 
 def check_collision_AABB(to_check_tensor,Amin,Amax,Bmin,Bmax):

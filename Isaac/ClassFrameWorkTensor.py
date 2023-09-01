@@ -100,7 +100,7 @@ class AlbertEnvironment(BaseTask):
         self.root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
         ############################### Creation des objets tensuers albert et room #########################################
-        self.albert_tensor = AlbertCube(self.sim,self.gym,self.room_manager,self.num_bodies,torch.tensor(envs),self.root_tensor,torch.tensor(self.albert_handle))
+        self.albert_tensor = AlbertCube(self.sim,self.gym,self.viewer,self.room_manager,self.num_bodies,torch.tensor(envs),self.root_tensor,torch.tensor(self.albert_handle))
         self.room_manager.add_room(Room(self.num_bodies,self.num_envs))
 
         self.time_passed = torch.zeros((self.num_envs,))
