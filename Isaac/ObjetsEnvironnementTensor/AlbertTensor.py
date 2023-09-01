@@ -342,7 +342,7 @@ class AlbertCube(Cube):
             new_obs[:,105+ i * 21:i + 1 * 21] = obs[:,(2 * i+1) * 21: (2 * i + 2) * 21]
         return new_obs
 
-    def get_contact_points(self):  #### sera fausse car albert n'est pas AABB
+    def get_contact_points(self):  #### sera fausse car albert n'est pas AABB ################################## FINI ############################
         room_tensor = self.room_manager.room_array[self.actual_room]
         id_collision_tensor = torch.full((self.num_envs,), -1)
         albert_pos = self.get_pos_tensor()
@@ -436,7 +436,7 @@ def binarize(buttons_tensor):  # retourne une liste d'états des bouttons ( 1 si
     return zero_one_tensor
 
 
-def euler_to_rotation_matrix(euler_angles):
+def euler_to_rotation_matrix(euler_angles):########################### FINI #########################
     """
     Convert a tensor of Euler angles to a tensor of rotation matrices.
 
@@ -472,7 +472,7 @@ def euler_to_rotation_matrix(euler_angles):
     return rotation_matrices
 
 
-def quaternion_to_euler(quaternions):
+def quaternion_to_euler(quaternions):######################### FINI #########################
     """
     Convert a tensor of quaternions to a tensor of Euler angles in radians.
 
@@ -491,7 +491,7 @@ def quaternion_to_euler(quaternions):
 
     return torch.stack((roll, pitch, yaw), dim=-1)
 
-def euler_to_quaternion(euler_angles):
+def euler_to_quaternion(euler_angles):##################### FINI ######################
     """
     Convert a 1D tensor of XYZ Euler angles to a tensor of quaternions.
 
@@ -519,7 +519,7 @@ def euler_to_quaternion(euler_angles):
     return quaternion
 
 
-def grid_vision(character_pos, character_ori,ray_length):  # retourne la position du bout des tous les rayons nécessaires à la vision
+def grid_vision(character_pos, character_ori,ray_length):  # retourne la position du bout des tous les rayons nécessaires à la vision #################### FINI #######################
     cube_ori = quaternion_to_euler(character_ori)
     matrice_ori = euler_to_rotation_matrix(cube_ori)
 
@@ -561,12 +561,12 @@ def grid_vision(character_pos, character_ori,ray_length):  # retourne la positio
 
 
 
-def check_collision_AABB(to_check_tensor,Amin,Amax,Bmin,Bmax):
+def check_collision_AABB(to_check_tensor,Amin,Amax,Bmin,Bmax):########################### FINI #############################
     condition = (Amin<=Bmax | Amax>=Bmin)
     result = torch.nn.functional.conv1d(condition.unsqueeze(0).float(), torch.ones(1, 3).float()).squeeze() == 3
     return result & to_check_tensor
 
-def check_collision_AABB_2(Amin,Amax,Bmin,Bmax):
+def check_collision_AABB_2(Amin,Amax,Bmin,Bmax):############################ FINI ##################################
     condition = (Amin<=Bmax | Amax>=Bmin)
     result = torch.nn.functional.conv1d(condition.unsqueeze(0).float(), torch.ones(1, 3).float()).squeeze() == 3
     return result
