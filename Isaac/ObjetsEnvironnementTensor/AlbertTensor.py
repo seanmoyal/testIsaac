@@ -57,38 +57,71 @@ class AlbertCube(Cube):
 
 
     def raycasting(self):  ################################CHANGER A ISAAC ###################################################
-        cube_pos = self.data.xpos[self.id]
-        cube_ori = self.data.xquat[self.id]
+        cube_pos = self.get_pos_tensor()
+        cube_ori = self.get_ori_tensor()
         ray_vects = grid_vision(cube_pos, cube_ori, ray_length=10)  # définit le quadrillage par les rayons
 
         # RAYCASTING
-        contact_results = []
-        geom_ids = np.empty([21])
-        geom_id = np.array([130], dtype='int32')  # ID du geom de l'acteur mais en vrai ca doit pas etre ca qu'il faut
+        contact_results = torch.tensor([])
         for n in range(21):
-            contact_results.append(
-                mj.mj_ray(self.model, self.data, pnt=cube_pos, vec=ray_vects[n], geomgroup=None, flg_static=1,
-                          bodyexclude=131,
-                          geomid=geom_id))  # fonction de raycasting
-            geom_ids[n] = geom_id
+            contact_results=torch.cat(contact_results,[self.ray_collision(point_of_origin_tensor=cube_pos,end_pos_ray=ray_vects[n])])  # fonction de raycasting
 
-        # Création d'une liste des types d'objets rencontrés
 
-        body_types = []
         for n in range(21):
-            if geom_ids[n] > 0:  # pas prendre en compte les -1 ( vide ) et les id 0 ( plane )
-                body_types.append(self.check_type(self.model.geom(int(geom_ids[n])).bodyid[0],
-                                                  self.room_manager.room_array[self.actual_room]))
-            else:
-                body_types.append(0)
+            contact_results[n,:,0] = self.check_type(contact_results[n,:,0])
 
-        obs = []
-        for n in range(21):
-            obs.append([body_types[n], contact_results[n]])
+        return contact_results
 
-        # show_grid(viewer,cube_pos,ray_vects) # si on veut que les rayons soient visibles
+    def ray_collision(self, point_of_origin_tensor, end_pos_ray):
+        room_tensor = self.room_manager.room_array[self.actual_room]
+        distance = end_pos_ray - point_of_origin_tensor
+        id_distance_collision_tensor = torch.full((self.num_envs,), [-1, 10])
 
-        return obs
+        to_check_tensor = torch.full((self.num_envs,), False)
+        for i in range(100):
+            ray_pos = point_of_origin_tensor + distance * i / 100
+            Amin_ray = ray_pos - 0.1
+            Amax_ray = ray_pos + 0.1
+
+            for button in room_tensor.buttons_array_tensor:
+                button_pos = self.state_tensor[button.id_tensor]
+                Amin_button = button_pos - torch.tensor([0.5, 0.5, 0.1])
+                Amax_button = button_pos + torch.tensor([0.5, 0.5, 0.1])
+                result = check_collision_AABB(to_check_tensor, Amin_button, Amax_button, Amin_ray, Amax_ray)
+                id_distance_collision_tensor = torch.where(result, torch.tensor(
+                    torch.cat(button.id_tensor, [10 * i / 100], axis=1)), id_distance_collision_tensor)
+                to_check_tensor = id_distance_collision_tensor[:, 0] == -1
+
+            for box_id in room_tensor.floor_array_tensor:
+                box_pos = self.state_tensor[box_id][:3]
+                Amin_box = box_pos - 0.5
+                Amax_box = box_pos + 0.5
+                result = check_collision_AABB(to_check_tensor, Amin_box, Amax_box, Amin_ray, Amax_ray)
+                id_distance_collision_tensor = torch.where(result,
+                                                           torch.tensor(torch.cat(box_id, [10 * i / 100], axis=1)),
+                                                           id_distance_collision_tensor)
+                to_check_tensor = id_distance_collision_tensor[:, 0] == -1
+
+            for box_id in room_tensor.wall_array_tensor:
+                box_pos = self.state_tensor[box_id][:3]
+                Amin_box = box_pos - 0.5
+                Amax_box = box_pos + 0.5
+                result = check_collision_AABB(to_check_tensor, Amin_box, Amax_box, Amin_ray, Amax_ray)
+                id_distance_collision_tensor = torch.where(result,
+                                                           torch.tensor(torch.cat(box_id, [10 * i / 100], axis=1)),
+                                                           id_distance_collision_tensor)
+                to_check_tensor = id_distance_collision_tensor[:, 0] == -1
+
+            # for door :
+            door_pos = self.state_tensor[room_tensor.door_array_tensor[0]]
+            Amin_box = door_pos - 0.5
+            Amax_box = door_pos + 0.5
+            result = check_collision_AABB(to_check_tensor, Amin_box, Amax_box, Amin_ray, Amax_ray)
+            id_distance_collision_tensor = torch.where(result, torch.tensor(
+                torch.cat(room_tensor.door_array_tensor[0], [10 * i / 100], axis=1)), id_distance_collision_tensor)
+            to_check_tensor = id_distance_collision_tensor[:, 0] == -1
+
+        return id_distance_collision_tensor
 
     def jump_zer(self, jump, move):  ############################ FINI ##################################
         i = 13000  # force du jump sur un pas
@@ -446,32 +479,31 @@ def euler_to_quaternion(euler_angles):
     return quaternion
 
 
-def grid_vision(character_pos, character_ori,
-                ray_length):  # retourne la position du bout des tous les rayons nécessaires à la vision
-    cube_ori = euler_from_quaternion(character_ori)
+def grid_vision(character_pos, character_ori,ray_length):  # retourne la position du bout des tous les rayons nécessaires à la vision
+    cube_ori = quaternion_to_euler(character_ori)
     matrice_ori = euler_to_rotation_matrix(cube_ori)
 
     # On détermine ici les angles des rayons pour le quadrillage
     # départ des angles :
-    dep_angles_yaw = -35 * np.pi / 180
-    dep_angles_pitch = -10 * np.pi / 180
+    dep_angles_yaw = -35 * torch.pi / 180
+    dep_angles_pitch = -10 * torch.pi / 180
     # Pas yaw pour 70°
     step_yaw = 70 / 6
-    step_yaw_rad = step_yaw * np.pi / 180
+    step_yaw_rad = step_yaw * torch.pi / 180
 
     # pas pitch pour 70°
     step_pitch = 20 / 2
-    step_pitch_rad = step_pitch * np.pi / 180
+    step_pitch_rad = step_pitch * torch.pi / 180
 
     # rayVec1 : premier rayon droit devant le cube
-    ray_vects = []
+    ray_vects = torch.tensor([])
     for i in range(3):
         for n in range(7):
-            base_ray = [np.cos((n * step_yaw_rad + dep_angles_yaw)) * np.cos((i * step_pitch_rad + dep_angles_pitch)),
-                        np.sin((n * step_yaw_rad + dep_angles_yaw)), np.sin((i * step_pitch_rad + dep_angles_pitch))]
-            norm_ray = np.linalg.norm(base_ray)
+            base_ray = torch.tensor([torch.cos((n * step_yaw_rad + dep_angles_yaw)) * torch.cos((i * step_pitch_rad + dep_angles_pitch)),
+                        torch.sin((n * step_yaw_rad + dep_angles_yaw)), torch.sin((i * step_pitch_rad + dep_angles_pitch))])
+            norm_ray = torch.linalg.norm(base_ray)
 
-            a = np.dot(matrice_ori, np.array(
+            a = torch.matmul(matrice_ori, torch.array(
                 [(base_ray[0] / norm_ray * ray_length),
                  (ray_length * base_ray[1] / norm_ray),
                  (ray_length * base_ray[2] / norm_ray)
@@ -483,7 +515,7 @@ def grid_vision(character_pos, character_ori,
             a[1] += character_ori[1]
             a[2] += character_pos[2]
 
-            ray_vects.append(a)
+            ray_vects = torch.cat(ray_vects,[a])
     return ray_vects
 
 
@@ -497,3 +529,10 @@ def show_grid(viewer, cube_pos,
         mj.mjv_makeConnector(viewer.scn.geoms[n], mj.mjtGeom.mjGEOM_LINE, width=5, a0=cube_pos[0],
                              a1=cube_pos[1], a2=cube_pos[2], b0=ray_vects[n][0], b1=ray_vects[n][1],
                              b2=ray_vects[n][2])
+
+
+def check_collision_AABB(to_check_tensor,Amin,Amax,Bmin,Bmax):
+    condition = (Amin<=Bmax | Amax>=Bmin)
+    result = torch.nn.functional.conv1d(condition.unsqueeze(0).float(), torch.ones(1, 3).float()).squeeze() == 3
+    return result & to_check_tensor
+
