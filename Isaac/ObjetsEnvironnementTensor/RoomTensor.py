@@ -27,7 +27,7 @@ class Room:  # classe d'une chambre ( niveau )
         id = 1
         for i in range(self.depth):
             for j in range(self.width):
-                torch.cat((self.floor_array_tensor,[[id+self.num_bodies*env_id] for env_id in range(self.num_envs)]),dim=1)
+                torch.cat((self.floor_array_tensor,torch.tensor([[id+self.num_bodies*env_id] for env_id in range(self.num_envs)])),dim=1)
                 id+=1
 
                 for z in range(self.height):  # MURS

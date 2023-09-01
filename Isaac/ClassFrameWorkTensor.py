@@ -53,7 +53,7 @@ class AlbertEnvironment(BaseTask):
         # cache some common handles for later use
         envs = []
         self.actor_handles = []
-
+        self.albert_handle=[]
         # instanciate Room Manager
         self.room_manager = RoomManager()
         self.albert_array = np.empty((self.num_envs,))
@@ -67,7 +67,7 @@ class AlbertEnvironment(BaseTask):
             pose_albert.p = gymapi.Vec3(2.0, 3.0, 1.5)  # pose.r pour l'orientation
             # la position est relative
             actor_handle_albert = self.gym.create_actor(env, asset_albert, pose_albert, "Albert", i,1)  # creation  d'un acteur à partir d'un asset
-
+            self.albert_handle.append(actor_handle_albert)
             self.actor_handles.append(actor_handle_albert)
 
             #pose_room = gymapi.Transform()
@@ -100,7 +100,7 @@ class AlbertEnvironment(BaseTask):
         self.root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
         ############################### Creation des objets tensuers albert et room #########################################
-        self.albert_tensor = AlbertCube(self.sim,self.gym,self.room_manager,self.num_bodies,env_tensor,self.root_tensor,handles_albert)
+        self.albert_tensor = AlbertCube(self.sim,self.gym,self.room_manager,self.num_bodies,torch.tensor(envs),self.root_tensor,torch.tensor(self.albert_handle))
         self.room_manager.add_room(Room(self.num_bodies,self.num_envs))
 
         self.time_passed = torch.zeros((self.num_envs,))

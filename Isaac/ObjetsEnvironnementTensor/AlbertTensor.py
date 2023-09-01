@@ -261,7 +261,7 @@ class AlbertCube(Cube):
 
         return current_state
 
-    def init_memory_state(self):
+    def init_memory_state(self):############### FINI ##################
         room_tensor = self.room_manager.room_array[self.actual_room]
         state={}
         state["CharacterPosition"] = torch.full((self.num_envs,3),None)
@@ -274,7 +274,7 @@ class AlbertCube(Cube):
             memory_state = torch.cat(memory_state,torch.tensor([state]))
         return memory_state
 
-    def reset_memory_state(self,reset_tensor):
+    def reset_memory_state(self,reset_tensor):###################### FINI ######################
         room_tensor = self.room_manager.room_array[self.actual_room]
         for i in range(5):
             self.memory_state[i]["CharacterPosition"][reset_tensor]=torch.full((3,),None)
@@ -318,11 +318,11 @@ class AlbertCube(Cube):
         bool_result = torch.tensor((types_checked_tensor == 1) | (types_checked_tensor == 2)).any(dim=1)
         return bool_result
 
-    def get_pos_tensor(self):
+    def get_pos_tensor(self):################ FINI ################
         positions = self.state_tensor[self.id_array][0:3]
         return positions
 
-    def get_ori_tensor(self):
+    def get_ori_tensor(self):################### FINI #####################
         quats = self.state_tensor[self.id_array][3:7]
         return quats
 
@@ -444,11 +444,6 @@ def euler_to_quaternion(euler_angles):
 
     quaternion = torch.tensor([w, x, y, z])
     return quaternion
-
-def quaternion_from_euler(euler):
-    eu = Rotation.from_euler('zyx', euler, degrees=False)
-    quat = eu.as_quat()
-    return quat
 
 
 def grid_vision(character_pos, character_ori,
