@@ -71,7 +71,7 @@ class AlbertCube(Cube):
         for n in range(21):
             contact_results[n,:,0] = self.check_type(contact_results[n,:,0])
 
-        #self.show_grid(cube_pos,ray_vects) ## UNCOMMENT THIS LINE FOR VISIBLE RAYCASTING 
+        #self.show_grid(cube_pos,ray_vects) ## UNCOMMENT THIS LINE FOR VISIBLE RAYCASTING
 
         return contact_results
 
@@ -342,24 +342,47 @@ class AlbertCube(Cube):
             new_obs[:,105+ i * 21:i + 1 * 21] = obs[:,(2 * i+1) * 21: (2 * i + 2) * 21]
         return new_obs
 
+    def get_contact_points(self):  #### sera fausse car albert n'est pas AABB
+        room_tensor = self.room_manager.room_array[self.actual_room]
+        id_collision_tensor = torch.full((self.num_envs,), -1)
+        albert_pos = self.get_pos_tensor()
+        Amin_alb = albert_pos - 0.35
+        Amax_alb = albert_pos + 0.35
 
-    def get_contact_points(self):  ################################ CHANGE TO ISAAC ####################################
+        for button in room_tensor.buttons_array_tensor:
+            button_pos = self.state_tensor[button.id_tensor]
+            Amin_button = button_pos - torch.tensor([0.5, 0.5, 0.1])
+            Amax_button = button_pos + torch.tensor([0.5, 0.5, 0.1])
+            result = check_collision_AABB_2(Amin_button, Amax_button, Amin_alb, Amax_alb)
+            id_collision_tensor = torch.where(result, torch.cat((id_collision_tensor, button.id_tensor), axis=1),
+                                              id_collision_tensor)
 
-        n = len(self.data.contact.geom1)
-        contact_points = []
-        for i in range(n):
-            g1 = self.data.contact.geom1[i]
-            g2 = self.data.contact.geom2[i]
-            if self.model.geom(g1).bodyid == self.id or self.model.geom(g2).bodyid == self.id:
-                if self.model.geom(g1).bodyid == self.id:
-                    print(self.model.geom(g2).friction)
-                    body_id = self.model.geom(g2).bodyid
-                    contact_points.append(body_id)
-                else:
-                    print(self.model.geom(g1).friction)
-                    body_id = self.model.geom(g1).bodyid
-                    contact_points.append(body_id)
-        return contact_points
+        for box_id in room_tensor.floor_array_tensor:
+            box_pos = self.state_tensor[box_id][:3]
+            Amin_box = box_pos - 0.5
+            Amax_box = box_pos + 0.5
+            result = check_collision_AABB_2(Amin_box, Amax_box, Amin_alb, Amax_alb)
+            id_collision_tensor = torch.where(result, torch.cat((id_collision_tensor, box_id), axis=1),
+                                              id_collision_tensor)
+
+        for box_id in room_tensor.wall_array_tensor:
+            box_pos = self.state_tensor[box_id][:3]
+            Amin_box = box_pos - 0.5
+            Amax_box = box_pos + 0.5
+            result = check_collision_AABB_2(Amin_box, Amax_box, Amin_alb, Amax_alb)
+            id_collision_tensor = torch.where(result, torch.cat((id_collision_tensor, box_id), axis=1),
+                                              id_collision_tensor)
+
+        # for door :
+        door_pos = self.state_tensor[room_tensor.door_array_tensor[0]]
+        Amin_box = door_pos - 0.5
+        Amax_box = door_pos + 0.5
+        result = check_collision_AABB_2(Amin_box, Amax_box, Amin_alb, Amax_alb)
+        id_collision_tensor = torch.where(result,
+                                          torch.cat((id_collision_tensor, room_tensor.door_array_tensor[0]), axis=1),
+                                          id_collision_tensor)
+
+        return id_collision_tensor
 
     def in_contact_with_floor_or_button(self):  # retourne true si albert est en contact avec le sol ou un boutton ########## FINI ##################s
         contact_points_tensor = self.get_contact_points()  ############### Cette fonction est aussi à changer
@@ -542,4 +565,9 @@ def check_collision_AABB(to_check_tensor,Amin,Amax,Bmin,Bmax):
     condition = (Amin<=Bmax | Amax>=Bmin)
     result = torch.nn.functional.conv1d(condition.unsqueeze(0).float(), torch.ones(1, 3).float()).squeeze() == 3
     return result & to_check_tensor
+
+def check_collision_AABB_2(Amin,Amax,Bmin,Bmax):
+    condition = (Amin<=Bmax | Amax>=Bmin)
+    result = torch.nn.functional.conv1d(condition.unsqueeze(0).float(), torch.ones(1, 3).float()).squeeze() == 3
+    return result
 

@@ -56,4 +56,48 @@ def ray_collision(self,point_of_origin_tensor,end_pos_ray):
 
 
 
+def collision_detection(self):#### sera fausse car albert n'est pas AABB
+    room_tensor = self.room_manager.room_array[self.actual_room]
+    id_collision_tensor = torch.full((self.num_envs,), -1)
+    albert_pos = self.get_pos_tensor()
+    Amin_alb = albert_pos - 0.35
+    Amax_alb = albert_pos + 0.35
+
+    for button in room_tensor.buttons_array_tensor:
+            button_pos = self.state_tensor[button.id_tensor]
+            Amin_button = button_pos - torch.tensor([0.5, 0.5, 0.1])
+            Amax_button = button_pos + torch.tensor([0.5, 0.5, 0.1])
+            result = check_collision_AABB_2( Amin_button, Amax_button, Amin_alb, Amax_alb)
+            id_collision_tensor = torch.where(result,torch.cat((id_collision_tensor,button.id_tensor), axis=1), id_collision_tensor)
+
+    for box_id in room_tensor.floor_array_tensor:
+            box_pos = self.state_tensor[box_id][:3]
+            Amin_box = box_pos - 0.5
+            Amax_box = box_pos + 0.5
+            result = check_collision_AABB_2( Amin_box, Amax_box, Amin_alb, Amax_alb)
+            id_collision_tensor = torch.where(result,torch.cat((id_collision_tensor,box_id), axis=1),
+                                                       id_collision_tensor)
+
+    for box_id in room_tensor.wall_array_tensor:
+            box_pos = self.state_tensor[box_id][:3]
+            Amin_box = box_pos - 0.5
+            Amax_box = box_pos + 0.5
+            result = check_collision_AABB_2( Amin_box, Amax_box, Amin_alb, Amax_alb)
+            id_collision_tensor = torch.where(result, torch.cat((id_collision_tensor,box_id), axis=1),
+                                                       id_collision_tensor)
+
+    # for door :
+    door_pos = self.state_tensor[room_tensor.door_array_tensor[0]]
+    Amin_box = door_pos - 0.5
+    Amax_box = door_pos + 0.5
+    result = check_collision_AABB_2( Amin_box, Amax_box, Amin_alb, Amax_alb)
+    id_collision_tensor = torch.where(result, torch.cat((id_collision_tensor,room_tensor.door_array_tensor[0]), axis=1), id_collision_tensor)
+
+    return id_collision_tensor
+
+def check_collision_AABB_2(Amin,Amax,Bmin,Bmax):
+    condition = (Amin<=Bmax | Amax>=Bmin)
+    result = torch.nn.functional.conv1d(condition.unsqueeze(0).float(), torch.ones(1, 3).float()).squeeze() == 3
+    return result
+
 
