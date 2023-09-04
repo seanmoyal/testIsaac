@@ -1,13 +1,9 @@
-import math
+
 import gymapi
 import torch
 import torch.nn.functional as F
-import keyboard
 import numpy as np
 from Isaac.ObjetsEnvironnementTensor.CubeTensor import Cube
-import mujoco as mj
-from scipy.spatial.transform import Rotation
-
 
 # Classe de l'Acteur : Albert
 class AlbertCube(Cube):
@@ -195,10 +191,9 @@ class AlbertCube(Cube):
                                                 space=gymapi.CoordinateSpace.LOCAL_SPACE)
 
     def take_action(self, action):  # 1: rotate, 2 : move, 3 : jump #################### FINI #########################
-        action_reshaped = action.reshape((self.num_envs, 3))
-        rotate = action_reshaped[:, 0]
-        move = action_reshaped[:, 1]
-        jump = action_reshaped[:, 2]
+        rotate = action[:, 0]
+        move = action[:, 1]
+        jump = action[:, 2]
         self.yaw_turn(rotate)
         self.move(move)
         self.jump_zer(jump, move)

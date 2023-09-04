@@ -1,3 +1,5 @@
+import os
+
 import BaseTask
 from isaacgym import gymapi
 from numpy import random
@@ -99,7 +101,7 @@ class AlbertEnvironment(BaseTask):
         _root_tensor = self.gym.acquire_actor_root_state_tensor(self.sim)
         self.root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
-        ############################### Creation des objets tensuers albert et room #########################################
+        ############################### Creation des objets tenseurs albert et room #########################################
         self.albert_tensor = AlbertCube(self.sim,self.gym,self.viewer,self.room_manager,self.num_bodies,torch.tensor(envs),self.root_tensor,torch.tensor(self.albert_handle))
         self.room_manager.add_room(Room(self.num_bodies,self.num_envs))
 
@@ -217,24 +219,27 @@ class AlbertEnvironment(BaseTask):
         return (dist < 0.5)  # pour l'instant 0.5 mais en vrai dépend de la dim de la sortie et du character
 
     def prepare_assets(self):############## FINI CAR RIEN A CHANGER ########################
+        project_name = "isaacgymEnvi"
+        project_path = get_absolute_path_project(project_name).replace('\\', '/')
+        xml_directory_path = project_path + "/assets/"
 
         # Asset 1 : Albert :
-        asset_root_albert = "../../assets"  # a changer avec le dossier MJCF
+
         asset_file_albert = "Albert.xml"  # a changer avec le fichier MJCF
         asset_options_albert = gymapi.AssetOptions()
         asset_options_albert.fix_base_link = True  # a voir ce que c'est
         asset_options_albert.armature = 0.01  # a voir aussi
 
-        asset_albert = self.gym.load_asset(self.sim, asset_root_albert, asset_file_albert, asset_options_albert)
+        asset_albert = self.gym.load_asset(self.sim, xml_directory_path, asset_file_albert, asset_options_albert)
 
         # Asset 2 : Room :
-        asset_root_room = "../../assets"  # a changer avec le dossier MJCF
-        asset_file_room = "Albert.xml"  # a changer avec le fichier MJCF
+
+        asset_file_room = "Room.xml"  # a changer avec le fichier MJCF
         asset_options_room = gymapi.AssetOptions()
         asset_options_room.fix_base_link = True  # a voir ce que c'est
         asset_options_room.armature = 0.01  # a voir aussi
 
-        asset_room = self.gym.load_asset(self.sim, asset_root_room, asset_file_room, asset_options_room)
+        asset_room = self.gym.load_asset(self.sim, xml_directory_path, asset_file_room, asset_options_room)
 
         return asset_albert, asset_room
 
@@ -289,3 +294,16 @@ class AlbertEnvironment(BaseTask):
         self.prev_state = self.get_previous_state()
 
 
+
+def get_absolute_path_project(project_name):
+
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+
+    current_directory = script_directory
+    while current_directory != os.path.dirname(current_directory):
+        if os.path.basename(current_directory) == project_name:
+            return current_directory
+        current_directory = os.path.dirname(current_directory)
+
+    # If the specified directory is not found, return None
+    return None
