@@ -2,16 +2,12 @@ import os
 
 import BaseTask
 from isaacgym import gymapi
-from numpy import random
 import gymtorch
 import torch
 from Isaac.ObjetsEnvironnementTensor.RoomManagerTensor import RoomManager
 from Isaac.ObjetsEnvironnementTensor.AlbertTensor import AlbertCube
 from Isaac.ObjetsEnvironnementTensor.RoomTensor import Room
 import numpy as np
-from scipy.spatial.transform import Rotation
-
-
 class AlbertEnvironment(BaseTask):
 
     # Common callbacks
@@ -79,7 +75,7 @@ class AlbertEnvironment(BaseTask):
              #                                         1)  # creation  d'un acteur à partir d'un asset
             #self.actor_handles.append(actor_handle_room)
 
-            self.build_basic_room(env,asset_base_cube,asset_door)
+            self.num_bodies = self.build_basic_room(env,asset_base_cube,asset_door)
             pose_button=gymapi.Transform()
             pose_button.p=gymapi.Vec3(3,4,0.52)
             actor_handle_button=self.gym.create_actor(env,asset_button,pose_button,"button",i,1)
@@ -108,7 +104,6 @@ class AlbertEnvironment(BaseTask):
         self.time_passed = torch.zeros((self.num_envs,))
         self.time_episode = 10
         self.step = 0.01  # dt
-        self.num_bodies = 60 # CHANGER CETTE VALEUR ########################### CHANGER ##############################
         self.curr_state = self.get_current_state()
         self.prev_state = self.get_previous_state()
         self.actions = None
@@ -118,7 +113,7 @@ class AlbertEnvironment(BaseTask):
         depth = 6
         width = 11
         height = 3
-        id=1
+        id=1 ############# PEUT ETRE UN PB DE COMMENCER A ID = 1
         for i in range(depth):
             for j in range(width):
                 pose = gymapi.Transform()
@@ -145,6 +140,7 @@ class AlbertEnvironment(BaseTask):
                             id+=1
                             actor_handle_cube = self.gym.create_actor(env, asset_base_cube, pose, name, i, 1)
                             self.actor_handles.append(actor_handle_cube)
+        return id
 
     def pre_physics_step(self, actions):######################## FINI ##############################
         # apply actions

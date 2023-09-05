@@ -1,14 +1,36 @@
+import keyboard
+
 from Isaac.ClassFrameWorkTensor import AlbertEnvironment
 import torch
-env=AlbertEnvironment()
+env = AlbertEnvironment()
 env.reset(reset_tensor=torch.full((env.num_envs,),True))
 
 episodes = 10
 
+def action_debug():
+    # Dictionary to map arrow keys to their corresponding index in the output array
+    action = torch.zeros((env.num_envs,3))
+
+    # Check for arrow key events
+    if keyboard.is_pressed("up"):
+        action[:,1] = 2
+
+    if keyboard.is_pressed("down"):
+        action[:,1] = 1
+
+    if keyboard.is_pressed("left"):
+        action[:,0] = 1
+
+    if keyboard.is_pressed("right"):
+        action[:,0] = 2
+
+    if keyboard.is_pressed("space"):
+        action[:,2] = 1
+    return action
 
 while not env.gym.query_viewer_has_closed(env.viewer):
     env.render()
-    env.pre_physics_step(env.action_space.sample())
+    env.pre_physics_step(action_debug())
     env.post_physics_step()
     # step the physics
     env.gym.simulate(env.sim)
